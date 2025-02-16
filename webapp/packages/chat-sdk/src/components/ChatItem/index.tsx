@@ -515,9 +515,7 @@ const ChatItem: React.FC<Props> = ({
                   onSwitchEntity={onSwitchEntity}
                   onFiltersChange={onFiltersChange}
                   onDateInfoChange={onDateInfoChange}
-                  onRefresh={() => {
-                    onRefresh();
-                  }}
+                  onRefresh={onRefresh}
                   handlePresetClick={handlePresetClick}
                 />
               )}

@@ -40,6 +40,12 @@ const BarChart: React.FC<Props> = ({
 }) => {
   const chartRef = useRef<any>();
   const instanceRef = useRef<ECharts>();
+  const { downloadChartAsImage } = useExportByEcharts({
+    instanceRef,
+    question,
+  });
+
+  const { register } = useContext(ChartItemContext);
 
   const { queryColumns, queryResults, entityInfo } = data;
 
@@ -183,13 +189,6 @@ const BarChart: React.FC<Props> = ({
   }
 
   const prefixCls = `${PREFIX_CLS}-bar`;
-
-  const { downloadChartAsImage } = useExportByEcharts({
-    instanceRef,
-    question,
-  });
-
-  const { register } = useContext(ChartItemContext);
 
   register('downloadChartAsImage', downloadChartAsImage);
 
