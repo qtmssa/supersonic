@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Superset Embed SDK 测试</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        margin: 0;
+        padding: 16px;
+      }
+      #container {
+        width: 100%;
+        height: 800px;
+        border: 1px solid #e5e5e5;
+      }
+      .row {
+        margin-bottom: 12px;
+      }
+      label {
+        display: inline-block;
+        width: 140px;
+      }
+      input {
+        width: 520px;
+        padding: 6px 8px;
+      }
+      button {
+        padding: 6px 12px;
+      }
+      .hint {
+        color: #666;
+        font-size: 12px;
+      }
+    </style>
+  </head>
+  <body>
+    <h2>Superset Embed SDK 测试页</h2>
+    <div class="row">
+      <label>Superset 域名</label>
+      <input id="supersetDomain" value="http://10.0.12.244:8088" />
+    </div>
+    <div class="row">
+      <label>Embedded ID</label>
+      <input id="embeddedId" value="c7cda0d6-b9b5-4479-980c-150b84defe80" />
+    </div>
+    <div class="row">
+      <label>Guest Token 接口</label>
+      <input id="guestTokenApi" value="/api/chat/superset/guest-token" />
+    </div>
+    <div class="row">
+      <label>Auth Token(可选)</label>
+      <input id="authToken" placeholder="Bearer Token 或 Cookie" />
+    </div>
+    <div class="row">
+      <label>Guest Token(可选)</label>
+      <input id="guestTokenInput" placeholder="直接粘贴 guest token" />
+    </div>
+    <div class="row">
+      <button id="embedBtn">开始嵌入</button>
+      <span class="hint">首次加载会请求 guest token</span>
+    </div>
+    <div class="row">
+      <div id="tokenResult" class="hint"></div>
+    </div>
+    <div id="container"></div>
+
+    <script src="./superset-embedded-sdk/index.js"></script>
+    <script>
+      const { embedDashboard } = window.supersetEmbeddedSdk || {};
+      const container = document.getElementById('container');
+      const embedBtn = document.getElementById('embedBtn');
+
+      const fetchGuestToken = async (apiUrl, embeddedId, authToken) => {
+        const headers = { 'Content-Type': 'application/json' };
+        if (authToken) {
+          headers.Authorization = authToken.startsWith('Bearer ') ? authToken : `Bearer ${authToken}`;
+        }
+        const resp = await fetch(apiUrl, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ embeddedId }),
+        });
+        const data = await resp.json();
+        const tokenResult = document.getElementById('tokenResult');
+        tokenResult.textContent = `guest-token response: ${JSON.stringify(data)}`;
+        return data?.data?.token || '';
+      };
+
+      const doEmbed = async () => {
+        const supersetDomain = document.getElementById('supersetDomain').value.trim();
+        const embeddedId = document.getElementById('embeddedId').value.trim();
+        const guestTokenApi = document.getElementById('guestTokenApi').value.trim();
+        const authToken = document.getElementById('authToken').value.trim();
+        const guestTokenInput = document.getElementById('guestTokenInput').value.trim();
+
+        if (!supersetDomain || !embeddedId || !guestTokenApi) {
+          alert('请填写 Superset 域名、Embedded ID 和 Guest Token 接口');
+          return;
+        }
+
+        if (!embedDashboard) {
+          alert('Superset Embed SDK 未加载，请检查 /superset-embedded-sdk/index.js');
+          return;
+        }
+        container.replaceChildren();
+        await embedDashboard({
+          id: embeddedId,
+          supersetDomain,
+          mountPoint: container,
+          fetchGuestToken: () =>
+            guestTokenInput
+              ? Promise.resolve(guestTokenInput)
+              : fetchGuestToken(guestTokenApi, embeddedId, authToken),
+          dashboardUiConfig: {
+            hideTitle: true,
+            hideTab: true,
+            hideChartControls: true,
+            filters: { visible: false, expanded: false },
+          },
+        });
+      };
+
+      embedBtn.addEventListener('click', () => {
+        doEmbed().catch(err => {
+          console.error(err);
+          alert('嵌入失败，请查看控制台错误');
+        });
+      });
+    </script>
+  </body>
+</html>

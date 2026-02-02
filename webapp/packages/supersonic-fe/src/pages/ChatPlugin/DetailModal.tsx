@@ -1,5 +1,16 @@
 import React, { useEffect, useState } from 'react';
-import { Modal, Select, Form, Input, InputNumber, message, Button, Radio, TreeSelect } from 'antd';
+import {
+  Modal,
+  Select,
+  Form,
+  Input,
+  InputNumber,
+  message,
+  Button,
+  Radio,
+  TreeSelect,
+  Switch,
+} from 'antd';
 import { getDataSetSchema, getModelList, savePlugin } from './service';
 import {
   DimensionType,
@@ -15,6 +26,7 @@ import styles from './style.less';
 import { PLUGIN_TYPE_MAP } from './constants';
 import { DeleteOutlined, PlusOutlined } from '@ant-design/icons';
 import { isArray } from 'lodash';
+import { getLlmList } from '../../services/system';
 
 const FormItem = Form.Item;
 const { TextArea } = Input;
@@ -37,6 +49,7 @@ const DetailModal: React.FC<Props> = ({ detail, onSubmit, onCancel }) => {
   const [examples, setExamples] = useState<{ id: string; question?: string }[]>([]);
   const [filters, setFilters] = useState<any[]>([]);
   const [dataSetList, setDataSetList] = useState<number[]>([]);
+  const [llmConfigListOptions, setLlmConfigListOptions] = useState<any[]>([]);
   const [form] = Form.useForm();
 
   const initModelList = async () => {
@@ -52,6 +65,7 @@ const DetailModal: React.FC<Props> = ({ detail, onSubmit, onCancel }) => {
 
   useEffect(() => {
     initModelList();
+    queryLlmList();
   }, []);
 
   const initModelDimensions = async (params: any) => {
@@ -87,12 +101,14 @@ const DetailModal: React.FC<Props> = ({ detail, onSubmit, onCancel }) => {
         baseUrl: isSuperset ? detail.config?.baseUrl : undefined,
         accessToken: isSuperset ? detail.config?.accessToken : undefined,
         timeoutSeconds: isSuperset ? detail.config?.timeoutSeconds : undefined,
-        datasetId: isSuperset ? detail.config?.datasetId : undefined,
-        databaseId: isSuperset ? detail.config?.databaseId : undefined,
-        schema: isSuperset ? detail.config?.schema : undefined,
         datasourceType: isSuperset ? detail.config?.datasourceType : undefined,
         vizType: isSuperset ? detail.config?.vizType : undefined,
-        embedPath: isSuperset ? detail.config?.embedPath : undefined,
+        vizTypeLlmEnabled: isSuperset ? detail.config?.vizTypeLlmEnabled : undefined,
+        vizTypeLlmTopN: isSuperset ? detail.config?.vizTypeLlmTopN : undefined,
+        vizTypeAllowList: isSuperset ? detail.config?.vizTypeAllowList : undefined,
+        vizTypeDenyList: isSuperset ? detail.config?.vizTypeDenyList : undefined,
+        vizTypeLlmChatModelId: isSuperset ? detail.config?.vizTypeLlmChatModelId : undefined,
+        vizTypeLlmPrompt: isSuperset ? detail.config?.vizTypeLlmPrompt : undefined,
         formData: isSuperset
           ? JSON.stringify(detail.config?.formData || {}, null, 2)
           : undefined,
@@ -132,6 +148,21 @@ const DetailModal: React.FC<Props> = ({ detail, onSubmit, onCancel }) => {
     }
   }, [detail]);
 
+  const queryLlmList = async () => {
+    const { code, data } = await getLlmList();
+    if (code === 200 && data) {
+      const options = data.map((item: any) => {
+        return {
+          label: item.name,
+          value: item.id,
+        };
+      });
+      setLlmConfigListOptions(options);
+    } else {
+      message.error('获取模型列表失败');
+    }
+  };
+
   const layout = {
     labelCol: { span: 4 },
     wrapperCol: { span: 20 },
@@ -164,9 +195,9 @@ const DetailModal: React.FC<Props> = ({ detail, onSubmit, onCancel }) => {
     const values = await form.validateFields();
     setConfirmLoading(true);
     let config: any = {};
-    if (values.type === PluginTypeEnum.SUPERSET) {
-      let formDataValue = undefined;
-      if (values.formData) {
+      if (values.type === PluginTypeEnum.SUPERSET) {
+        let formDataValue = undefined;
+        if (values.formData) {
         try {
           formDataValue = JSON.parse(values.formData);
         } catch (error) {
@@ -175,19 +206,21 @@ const DetailModal: React.FC<Props> = ({ detail, onSubmit, onCancel }) => {
           return;
         }
       }
-      config = {
-        enabled: values.enabled !== false,
-        baseUrl: values.baseUrl,
-        accessToken: values.accessToken,
-        timeoutSeconds: values.timeoutSeconds,
-        datasetId: values.datasetId,
-        databaseId: values.databaseId,
-        schema: values.schema,
-        datasourceType: values.datasourceType,
-        vizType: values.vizType,
-        formData: formDataValue,
-        embedPath: values.embedPath,
-        height: values.height,
+        config = {
+          enabled: values.enabled !== false,
+          baseUrl: values.baseUrl,
+          accessToken: values.accessToken,
+          timeoutSeconds: values.timeoutSeconds,
+          datasourceType: values.datasourceType,
+          vizType: values.vizType,
+          vizTypeLlmEnabled: values.vizTypeLlmEnabled,
+          vizTypeLlmTopN: values.vizTypeLlmTopN,
+          vizTypeAllowList: values.vizTypeAllowList,
+          vizTypeDenyList: values.vizTypeDenyList,
+          vizTypeLlmChatModelId: values.vizTypeLlmChatModelId,
+          vizTypeLlmPrompt: values.vizTypeLlmPrompt,
+          formData: formDataValue,
+          height: values.height,
       };
     } else {
       let paramOptions = isArray(filters)
@@ -300,6 +333,8 @@ const DetailModal: React.FC<Props> = ({ detail, onSubmit, onCancel }) => {
                   datasourceType: 'table',
                   timeoutSeconds: 30,
                   vizType: 'AUTO',
+                  vizTypeLlmEnabled: true,
+                  vizTypeLlmTopN: 3,
                 });
               }
             }}
@@ -491,15 +526,6 @@ const DetailModal: React.FC<Props> = ({ detail, onSubmit, onCancel }) => {
             <FormItem name="timeoutSeconds" label="超时(秒)">
               <InputNumber placeholder="默认30" min={1} />
             </FormItem>
-            <FormItem name="datasetId" label="数据集ID">
-              <InputNumber placeholder="已有Superset数据集ID" min={1} />
-            </FormItem>
-            <FormItem name="databaseId" label="数据库ID">
-              <InputNumber placeholder="用于创建虚拟数据集" min={1} />
-            </FormItem>
-            <FormItem name="schema" label="Schema">
-              <Input placeholder="可选" allowClear />
-            </FormItem>
             <FormItem name="datasourceType" label="数据源类型">
               <Select
                 placeholder="table"
@@ -512,8 +538,31 @@ const DetailModal: React.FC<Props> = ({ detail, onSubmit, onCancel }) => {
             <FormItem name="vizType" label="viz_type">
               <Input placeholder="AUTO 或 Superset 图表类型" allowClear />
             </FormItem>
-            <FormItem name="embedPath" label="Embed路径">
-              <Input placeholder="/superset/embed/chart/{uuid}/" allowClear />
+            <FormItem name="vizTypeLlmEnabled" label="启用LLM选图" valuePropName="checked">
+              <Switch />
+            </FormItem>
+            <FormItem name="vizTypeLlmChatModelId" label="LLM模型">
+              <Select placeholder="请选择模型" options={llmConfigListOptions} allowClear />
+            </FormItem>
+            <FormItem name="vizTypeLlmTopN" label="LLM Top-N">
+              <InputNumber placeholder="默认3" min={1} />
+            </FormItem>
+            <FormItem name="vizTypeAllowList" label="图表白名单">
+              <Select
+                mode="tags"
+                tokenSeparators={[',']}
+                placeholder="支持 viz_type 或图表名称"
+              />
+            </FormItem>
+            <FormItem name="vizTypeDenyList" label="图表黑名单">
+              <Select
+                mode="tags"
+                tokenSeparators={[',']}
+                placeholder="支持 viz_type 或图表名称"
+              />
+            </FormItem>
+            <FormItem name="vizTypeLlmPrompt" label="LLM提示词">
+              <TextArea placeholder="留空使用默认提示词" autoSize={{ minRows: 6, maxRows: 12 }} />
             </FormItem>
             <FormItem name="formData" label="form_data(JSON)">
               <TextArea placeholder='{"viz_type":"line"}' autoSize={{ minRows: 4, maxRows: 10 }} />

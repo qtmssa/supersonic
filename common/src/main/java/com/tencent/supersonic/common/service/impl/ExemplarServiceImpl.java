@@ -65,6 +65,9 @@ public class ExemplarServiceImpl implements ExemplarService, CommandLineRunner {
     }
 
     public List<Text2SQLExemplar> recallExemplars(String collection, String query, int num) {
+        if (num <= 0) {
+            return Lists.newArrayList();
+        }
         List<Text2SQLExemplar> exemplars = Lists.newArrayList();
         RetrieveQuery retrieveQuery =
                 RetrieveQuery.builder().queryTextsList(Lists.newArrayList(query)).build();

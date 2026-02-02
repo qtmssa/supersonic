@@ -1,7 +1,9 @@
 package com.tencent.supersonic.chat.server.plugin.build.superset;
 
 import lombok.Data;
+import org.apache.commons.lang3.StringUtils;
 
+import java.util.List;
 import java.util.Map;
 
 @Data
@@ -9,25 +11,59 @@ public class SupersetPluginConfig {
 
     private boolean enabled = true;
 
+    private boolean authEnabled = true;
+
     private String baseUrl;
 
-    private String accessToken;
+    private String authStrategy = "JWT_FIRST";
+
+    private String apiKey;
+
+    private String jwtUsername;
+
+    private String jwtPassword;
+
+    private String jwtProvider = "db";
 
     private Integer timeoutSeconds = 30;
-
-    private Long datasetId;
-
-    private Long databaseId;
-
-    private String schema;
 
     private String datasourceType = "table";
 
     private String vizType;
 
+    private boolean vizTypeLlmEnabled = true;
+
+    private Integer vizTypeLlmTopN = 3;
+
+    private List<String> vizTypeAllowList;
+
+    private List<String> vizTypeDenyList;
+
+    private Integer vizTypeLlmChatModelId;
+
+    private String vizTypeLlmPrompt;
+
     private Map<String, Object> formData;
 
-    private String embedPath;
-
     private Integer height;
+
+    private String guestTokenUserUsername = "supersonic-guest";
+
+    private String guestTokenUserFirstName = "Supersonic";
+
+    private String guestTokenUserLastName = "Guest";
+
+    /**
+     * 校验 Superset 认证配置是否可用。
+     *
+     * Returns: 认证关闭时返回 true，认证开启时需至少提供 JWT 或 API key。
+     */
+    public boolean hasValidAuthConfig() {
+        if (!authEnabled) {
+            return true;
+        }
+        boolean hasApiKey = StringUtils.isNotBlank(apiKey);
+        boolean hasJwt = StringUtils.isNotBlank(jwtUsername) && StringUtils.isNotBlank(jwtPassword);
+        return hasApiKey || hasJwt;
+    }
 }

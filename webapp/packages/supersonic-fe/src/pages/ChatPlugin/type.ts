@@ -8,13 +8,15 @@ export type PluginConfigType = {
   baseUrl?: string;
   accessToken?: string;
   timeoutSeconds?: number;
-  datasetId?: number;
-  databaseId?: number;
-  schema?: string;
   datasourceType?: string;
   vizType?: string;
+  vizTypeLlmEnabled?: boolean;
+  vizTypeLlmTopN?: number;
+  vizTypeAllowList?: string[];
+  vizTypeDenyList?: string[];
+  vizTypeLlmChatModelId?: number;
+  vizTypeLlmPrompt?: string;
   formData?: any;
-  embedPath?: string;
   height?: number;
 };
 

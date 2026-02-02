@@ -10,7 +10,8 @@ import com.tencent.supersonic.chat.api.pojo.response.QueryResult;
 import com.tencent.supersonic.chat.server.agent.Agent;
 import com.tencent.supersonic.chat.server.executor.ChatQueryExecutor;
 import com.tencent.supersonic.chat.server.parser.ChatQueryParser;
-import com.tencent.supersonic.chat.server.persistence.dataobject.ChatQueryDO;
+import com.tencent.supersonic.chat.server.persistence.dataobject.ChatParseDO;
+import com.tencent.supersonic.chat.server.persistence.repository.ChatQueryRepository;
 import com.tencent.supersonic.chat.server.pojo.ExecuteContext;
 import com.tencent.supersonic.chat.server.pojo.ParseContext;
 import com.tencent.supersonic.chat.server.processor.execute.DataInterpretProcessor;
@@ -87,6 +88,8 @@ public class ChatQueryServiceImpl implements ChatQueryService {
     @Autowired
     @Lazy
     private AgentService agentService;
+    @Autowired
+    private ChatQueryRepository chatQueryRepository;
 
     private final List<ChatQueryParser> chatQueryParsers = ComponentFactory.getChatParsers();
     private final List<ChatQueryExecutor> chatQueryExecutors = ComponentFactory.getChatExecutors();
@@ -141,11 +144,17 @@ public class ChatQueryServiceImpl implements ChatQueryService {
     public QueryResult execute(ChatExecuteReq chatExecuteReq) {
         QueryResult queryResult = new QueryResult();
         ExecuteContext executeContext = buildExecuteContext(chatExecuteReq);
+        log.debug("execute start, queryId={}, parseId={}, agentId={}, chatId={}",
+                chatExecuteReq.getQueryId(), chatExecuteReq.getParseId(),
+                chatExecuteReq.getAgentId(), chatExecuteReq.getChatId());
         for (ChatQueryExecutor chatQueryExecutor : chatQueryExecutors) {
             if (chatQueryExecutor.accept(executeContext)) {
                 queryResult = chatQueryExecutor.execute(executeContext);
                 if (queryResult != null) {
-                    break;
+                    log.debug("executor selected: {}, queryState={}, queryMode={}",
+                        chatQueryExecutor.getClass().getSimpleName(), queryResult.getQueryState(),
+                        queryResult.getQueryMode());
+                break;
                 }
             }
         }
@@ -154,6 +163,8 @@ public class ChatQueryServiceImpl implements ChatQueryService {
         if (queryResult != null) {
             for (ExecuteResultProcessor processor : executeResultProcessors) {
                 if (processor.accept(executeContext)) {
+                    log.debug("execute processor accepted: {}",
+                            processor.getClass().getSimpleName());
                     processor.process(executeContext);
                 }
             }
@@ -217,9 +228,7 @@ public class ChatQueryServiceImpl implements ChatQueryService {
 
     @Override
     public Object queryData(ChatQueryDataReq chatQueryDataReq, User user) throws Exception {
-        Integer parseId = chatQueryDataReq.getParseId();
-        SemanticParseInfo parseInfo =
-                chatManageService.getParseInfo(chatQueryDataReq.getQueryId(), parseId);
+        SemanticParseInfo parseInfo = resolveParseInfo(chatQueryDataReq);
         mergeParseInfo(parseInfo, chatQueryDataReq);
         DataSetSchema dataSetSchema =
                 semanticLayerService.getDataSetSchema(parseInfo.getDataSetId());
@@ -234,6 +243,28 @@ public class ChatQueryServiceImpl implements ChatQueryService {
         }
 
         return executeQuery(semanticQuery, user);
+    }
+
+    private SemanticParseInfo resolveParseInfo(ChatQueryDataReq chatQueryDataReq) {
+        Integer parseId = chatQueryDataReq.getParseId();
+        Long queryId = chatQueryDataReq.getQueryId();
+        if (Objects.nonNull(parseId)) {
+            return chatManageService.getParseInfo(queryId, parseId);
+        }
+        if (Objects.isNull(queryId)) {
+            throw new IllegalArgumentException("queryId is required when parseId is missing");
+        }
+        List<ChatParseDO> parseDOs =
+                chatQueryRepository.getParseInfoList(Lists.newArrayList(queryId));
+        if (CollectionUtils.isEmpty(parseDOs)) {
+            throw new IllegalArgumentException("parseId is required when no parse info exists");
+        }
+        List<SemanticParseInfo> parseInfos = parseDOs.stream()
+                .map(parseDO -> JsonUtil.toObject(parseDO.getParseInfo(), SemanticParseInfo.class))
+                .sorted(Comparator.comparingDouble(SemanticParseInfo::getScore).reversed())
+                .collect(Collectors.toList());
+        log.warn("Missing parseId for queryId {}, fallback to best scored parse", queryId);
+        return parseInfos.get(0);
     }
 
     private List<String> getFieldsFromSql(SemanticParseInfo parseInfo) {

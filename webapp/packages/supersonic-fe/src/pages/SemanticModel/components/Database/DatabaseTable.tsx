@@ -4,7 +4,7 @@ import { message, Button, Space, Popconfirm } from 'antd';
 import React, { useRef, useState, useEffect } from 'react';
 import DatabaseSettingModal from './DatabaseSettingModal';
 import { ISemantic } from '../../data';
-import { getDatabaseList, deleteDatabase } from '../../service';
+import { getDatabaseList, deleteDatabase, syncSupersetDatabases } from '../../service';
 
 import moment from 'moment';
 import styles from '../style.less';
@@ -15,6 +15,7 @@ const DatabaseTable: React.FC<Props> = ({}) => {
   const [createModalVisible, setCreateModalVisible] = useState<boolean>(false);
   const [databaseItem, setDatabaseItem] = useState<ISemantic.IDatabaseItem>();
   const [dataBaseList, setDataBaseList] = useState<any[]>([]);
+  const [syncing, setSyncing] = useState<boolean>(false);
 
   const actionRef = useRef<ActionType>();
 
@@ -132,6 +133,22 @@ const DatabaseTable: React.FC<Props> = ({}) => {
         size="small"
         options={{ reload: false, density: false, fullScreen: false }}
         toolBarRender={() => [
+          <Button
+            key="syncSuperset"
+            loading={syncing}
+            onClick={async () => {
+              setSyncing(true);
+              const { code, msg } = await syncSupersetDatabases();
+              setSyncing(false);
+              if (code === 200) {
+                message.success('已触发 Superset 同步');
+              } else {
+                message.error(msg);
+              }
+            }}
+          >
+            同步到 Superset
+          </Button>,
           <Button
             key="create"
             type="primary"

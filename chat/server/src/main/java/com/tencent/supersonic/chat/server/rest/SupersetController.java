@@ -2,6 +2,8 @@ package com.tencent.supersonic.chat.server.rest;
 
 import com.tencent.supersonic.chat.api.pojo.request.SupersetDashboardListReq;
 import com.tencent.supersonic.chat.api.pojo.request.SupersetDashboardPushReq;
+import com.tencent.supersonic.chat.api.pojo.request.SupersetGuestTokenReq;
+import com.tencent.supersonic.chat.api.pojo.response.SupersetGuestTokenResp;
 import com.tencent.supersonic.chat.server.plugin.ChatPlugin;
 import com.tencent.supersonic.chat.server.plugin.build.superset.SupersetApiClient;
 import com.tencent.supersonic.chat.server.plugin.build.superset.SupersetDashboardInfo;
@@ -44,6 +46,18 @@ public class SupersetController {
         return true;
     }
 
+    @PostMapping("guest-token")
+    public SupersetGuestTokenResp createGuestToken(@RequestBody SupersetGuestTokenReq req) {
+        if (req == null || StringUtils.isBlank(req.getEmbeddedId())) {
+            throw new InvalidArgumentException("embeddedId required");
+        }
+        ChatPlugin plugin = resolveSupersetPlugin(req.getPluginId());
+        SupersetApiClient client = new SupersetApiClient(buildConfig(plugin));
+        SupersetGuestTokenResp response = new SupersetGuestTokenResp();
+        response.setToken(client.createEmbeddedGuestToken(req.getEmbeddedId()));
+        return response;
+    }
+
     private ChatPlugin resolveSupersetPlugin(Long pluginId) {
         List<ChatPlugin> plugins = pluginService.getPluginList();
         if (plugins == null || plugins.isEmpty()) {
@@ -62,7 +76,7 @@ public class SupersetController {
         SupersetPluginConfig config =
                 JsonUtil.toObject(plugin.getConfig(), SupersetPluginConfig.class);
         if (config == null || !config.isEnabled() || StringUtils.isBlank(config.getBaseUrl())
-                || StringUtils.isBlank(config.getAccessToken())) {
+                || !config.hasValidAuthConfig()) {
             throw new InvalidArgumentException("superset config invalid");
         }
         return config;

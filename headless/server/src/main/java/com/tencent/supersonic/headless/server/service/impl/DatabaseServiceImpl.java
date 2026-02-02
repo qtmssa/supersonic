@@ -7,6 +7,7 @@ import com.tencent.supersonic.common.pojo.QueryColumn;
 import com.tencent.supersonic.common.pojo.User;
 import com.tencent.supersonic.common.pojo.enums.AuthType;
 import com.tencent.supersonic.common.pojo.enums.EngineType;
+import com.tencent.supersonic.common.pojo.enums.EventType;
 import com.tencent.supersonic.headless.api.pojo.DBColumn;
 import com.tencent.supersonic.headless.api.pojo.enums.DataType;
 import com.tencent.supersonic.headless.api.pojo.request.DatabaseReq;
@@ -25,10 +26,13 @@ import com.tencent.supersonic.headless.server.persistence.mapper.DatabaseDOMappe
 import com.tencent.supersonic.headless.server.pojo.*;
 import com.tencent.supersonic.headless.server.service.DatabaseService;
 import com.tencent.supersonic.headless.server.service.ModelService;
+import com.tencent.supersonic.headless.server.sync.superset.SupersetSyncEvent;
+import com.tencent.supersonic.headless.server.sync.superset.SupersetSyncType;
 import com.tencent.supersonic.headless.server.utils.DatabaseConverter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.util.CollectionUtils;
@@ -49,6 +53,9 @@ public class DatabaseServiceImpl extends ServiceImpl<DatabaseDOMapper, DatabaseD
     @Autowired
     private ModelService datasourceService;
 
+    @Autowired
+    private ApplicationEventPublisher eventPublisher;
+
     @Override
     public boolean testConnect(DatabaseReq databaseReq, User user) {
         DatabaseResp database = DatabaseConverter.convert(databaseReq);
@@ -67,12 +74,16 @@ public class DatabaseServiceImpl extends ServiceImpl<DatabaseDOMapper, DatabaseD
             databaseReq.updatedBy(user.getName());
             DatabaseConverter.convert(databaseReq, databaseDO);
             updateById(databaseDO);
-            return DatabaseConverter.convertWithPassword(databaseDO);
+            DatabaseResp databaseResp = DatabaseConverter.convertWithPassword(databaseDO);
+            publishSupersetEvent(databaseResp.getId(), EventType.UPDATE);
+            return databaseResp;
         }
         databaseReq.createdBy(user.getName());
         databaseDO = DatabaseConverter.convertDO(databaseReq);
         save(databaseDO);
-        return DatabaseConverter.convertWithPassword(databaseDO);
+        DatabaseResp databaseResp = DatabaseConverter.convertWithPassword(databaseDO);
+        publishSupersetEvent(databaseResp.getId(), EventType.ADD);
+        return databaseResp;
     }
 
     @Override
@@ -155,6 +166,7 @@ public class DatabaseServiceImpl extends ServiceImpl<DatabaseDOMapper, DatabaseD
             throw new RuntimeException(message);
         }
         removeById(databaseId);
+        publishSupersetEvent(databaseId, EventType.DELETE);
     }
 
     @Override
@@ -326,5 +338,13 @@ public class DatabaseServiceImpl extends ServiceImpl<DatabaseDOMapper, DatabaseD
                     databaseResp.getCreatedBy());
             throw new RuntimeException(message);
         }
+    }
+
+    private void publishSupersetEvent(Long databaseId, EventType eventType) {
+        if (databaseId == null) {
+            return;
+        }
+        eventPublisher.publishEvent(new SupersetSyncEvent(this, SupersetSyncType.DATABASE,
+                eventType, Collections.singleton(databaseId)));
     }
 }

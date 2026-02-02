@@ -1,5 +1,9 @@
 import { render, waitFor } from '@testing-library/react';
-import SupersetChart from './index';
+import SupersetChart, { filterTemporaryDashboards } from './index';
+
+jest.mock('@superset-ui/embedded-sdk', () => ({
+  embedDashboard: jest.fn().mockResolvedValue({ unmount: jest.fn() }),
+}));
 
 const buildData = (response: any) =>
   ({
@@ -11,40 +15,48 @@ const buildData = (response: any) =>
   } as any);
 
 describe('SupersetChart', () => {
-  test('injects guestToken into iframe url', async () => {
+  test('does not use embedded url fallback', async () => {
     const data = buildData({
-      webPage: { url: 'https://superset.example.com/embed', params: [] },
+      webPage: { url: 'https://superset.example.com/superset/embedded/uuid-123/', params: [] },
+      pluginId: 1,
+      chartUuid: 'uuid-123',
       guestToken: 'token-123',
     });
-    const { getByTitle } = render(<SupersetChart id={1} data={data} />);
+    const { embedDashboard } = require('@superset-ui/embedded-sdk');
+    const { getByText } = render(<SupersetChart id={1} data={data} />);
     await waitFor(() => {
-      expect(getByTitle('supersetIframe')).toHaveAttribute(
-        'src',
-        'https://superset.example.com/embed?guestToken=token-123'
-      );
+      expect(getByText('Superset 嵌入信息缺失，无法渲染看板。')).toBeTruthy();
     });
+    expect(embedDashboard).not.toHaveBeenCalled();
   });
 
-  test('keeps url when no extra params', async () => {
-    const data = buildData({
-      webPage: { url: 'https://superset.example.com/embed', params: [] },
-    });
-    const { getByTitle } = render(<SupersetChart id={1} data={data} />);
-    await waitFor(() => {
-      expect(getByTitle('supersetIframe')).toHaveAttribute(
-        'src',
-        'https://superset.example.com/embed'
-      );
-    });
-  });
-
-  test('renders empty src when url missing', async () => {
+  test('uses embedded sdk when response provides embed info', async () => {
     const data = buildData({
       webPage: { url: '', params: [] },
+      pluginId: 1,
+      embeddedId: 'uuid-456',
+      supersetDomain: 'https://superset.example.com',
+      guestToken: 'token-456',
     });
-    const { getByTitle } = render(<SupersetChart id={1} data={data} />);
+    const { embedDashboard } = require('@superset-ui/embedded-sdk');
+    render(<SupersetChart id={1} data={data} />);
     await waitFor(() => {
-      expect(getByTitle('supersetIframe')).toHaveAttribute('src', '');
+      expect(embedDashboard).toHaveBeenCalled();
+    });
+    const args = embedDashboard.mock.calls[0][0];
+    expect(args.id).toBe('uuid-456');
+    expect(args.supersetDomain).toBe('https://superset.example.com');
+    await expect(args.fetchGuestToken()).resolves.toBe('token-456');
+  });
+
+  test('shows error when embed info missing', async () => {
+    const data = buildData({
+      webPage: { url: '', params: [] },
+      guestToken: 'token-123',
+    });
+    const { getByText } = render(<SupersetChart id={1} data={data} />);
+    await waitFor(() => {
+      expect(getByText('Superset 嵌入信息缺失，无法渲染看板。')).toBeTruthy();
     });
   });
 
@@ -56,6 +68,14 @@ describe('SupersetChart', () => {
       dashboards: [{ id: 10, title: 'Sales' }],
     });
     const { getByText } = render(<SupersetChart id={1} data={data} />);
-    expect(getByText('推送到 Dashboard')).toBeTruthy();
+    expect(getByText('推送到看板')).toBeTruthy();
+  });
+
+  test('filters temporary dashboards by supersonic prefix', () => {
+    const dashboards = [
+      { id: 10, title: 'supersonic_Plugin_123' },
+      { id: 11, title: 'Sales' },
+    ];
+    expect(filterTemporaryDashboards(dashboards, 'Plugin')).toEqual([{ id: 11, title: 'Sales' }]);
   });
 });
