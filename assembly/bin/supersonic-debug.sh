@@ -9,3 +9,5 @@ export S2_DB_PORT=5439
 export S2_DB_USER=supersonic
 export S2_DB_PASSWORD=lsOOas!09243@kaAgla
 export S2_DB_DATABASE=supersonic
+
+mvn spring-boot:run -pl launchers/standalone -Dspotless.skip=true
