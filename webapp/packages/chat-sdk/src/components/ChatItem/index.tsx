@@ -324,13 +324,17 @@ const ChatItem: React.FC<Props> = ({
 
   const onRefresh = async (parseInfoValue?: ChatContextType) => {
     setEntitySwitchLoading(true);
-    const { dimensions, metrics, id, queryId } = parseInfoValue || parseInfo || {};
+    const refreshContext: Partial<ChatContextType> =
+      parseInfoValue || parseInfo || data?.chatContext || {};
+    const { dimensions = [], metrics = [], id, queryId } = refreshContext;
+    const parseId =
+      id ?? parseInfo?.id ?? data?.chatContext?.id ?? parseInfoOptions?.[0]?.id;
     const chatContextValue = {
       dimensions,
       metrics,
       dateInfo,
       dimensionFilters,
-      parseId: id,
+      parseId,
       queryId,
     };
     const res: any = await queryData(chatContextValue);

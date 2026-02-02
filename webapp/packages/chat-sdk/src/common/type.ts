@@ -128,6 +128,8 @@ export type SupersetChartResponseType = {
   guestToken?: string;
   chartId?: number;
   chartUuid?: string;
+  embeddedId?: string;
+  supersetDomain?: string;
   vizType?: string;
   dashboards?: SupersetDashboardType[];
 };
@@ -135,6 +137,10 @@ export type SupersetChartResponseType = {
 export type SupersetDashboardType = {
   id: number;
   title: string;
+};
+
+export type SupersetGuestTokenResp = {
+  token: string;
 };
 
 export type MetricInfoType = {

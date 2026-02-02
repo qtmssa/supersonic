@@ -630,10 +630,22 @@ export function getDatabaseDetail(id: number): Promise<any> {
   return request.get(`${process.env.API_BASE_URL}database/${id}`);
 }
 
+export function syncSupersetDatabases(): Promise<any> {
+  return request(`${process.env.API_BASE_URL}superset/sync/databases`, {
+    method: 'POST',
+  });
+}
+
 export function getDataSetList(domainId: number): Promise<any> {
   return request(`${process.env.API_BASE_URL}dataSet/getDataSetList`, {
     method: 'GET',
     params: { domainId },
+  });
+}
+
+export function syncSupersetDatasets(): Promise<any> {
+  return request(`${process.env.API_BASE_URL}superset/sync/datasets`, {
+    method: 'POST',
   });
 }
 

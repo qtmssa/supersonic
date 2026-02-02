@@ -28,5 +28,9 @@ public class SupersetChartResp {
 
     private String guestToken;
 
+    private String embeddedId;
+
+    private String supersetDomain;
+
     private List<SupersetDashboardInfo> dashboards;
 }

@@ -36,7 +36,7 @@ public class OnePassSCSqlGenStrategy extends SqlGenStrategy {
                     + "\n#Task: You will be provided with a natural language question asked by users,"
                     + "please convert it to a SQL query so that relevant data could be returned "
                     + "by executing the SQL query against underlying database." + "\n#Rules:"
-                    + "\n1.SQL columns and values must be mentioned in the `Schema`, DO NOT hallucinate."
+                    + "\n1.ONLY use columns/metrics/dimensions/values that appear in the `Schema`; DO NOT hallucinate or rename."
                     + "\n2.ALWAYS specify time range using `>`,`<`,`>=`,`<=` operator."
                     + "\n3.DO NOT include time range in the where clause if not explicitly expressed in the `Question`."
                     + "\n4.DO NOT calculate date range using functions."

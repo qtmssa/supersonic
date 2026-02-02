@@ -87,6 +87,11 @@
         <appender-ref ref="serviceLog"/>
     </logger>
 
+    <logger name="com.tencent.supersonic.chat.server.service.impl" level="DEBUG" additivity="true"/>
+    <logger name="com.tencent.supersonic.chat.server.processor.execute" level="DEBUG" additivity="true"/>
+    <logger name="com.tencent.supersonic.chat.server.plugin.build.superset" level="DEBUG" additivity="true"/>
+    <logger name="com.tencent.supersonic.headless.server.sync.superset" level="DEBUG" additivity="true"/>
+
     <!-- 业务日志输出 -->
     <appender name="keyPipelineAppender" class="ch.qos.logback.core.rolling.RollingFileAppender">
         <File>${LOG_PATH}/s2-llm.log</File>

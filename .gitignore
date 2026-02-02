@@ -21,3 +21,8 @@ __pycache__/
 /dict
 assembly/build/*-SNAPSHOT
 **/node_modules/
+webapp/supersonic-webapp
+helloagents/
+helloagents/CHANGELOG.md
+
+**/.tmp*

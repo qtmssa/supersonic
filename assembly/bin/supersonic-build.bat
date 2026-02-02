@@ -25,9 +25,10 @@ cd %baseDir%
 
 if "%service%"=="webapp" (
    call :buildWebapp
-   tar xvf supersonic-webapp.tar.gz
-   move /y supersonic-webapp webapp
-   move /y webapp %projectDir%\launchers\%STANDALONE_SERVICE%\target\classes
+   set "targetPath=%projectDir%\launchers\%standalone_service%\target\classes"
+   tar xvf "%projectDir%\webapp\supersonic-webapp.tar.gz" -C "!targetPath!"
+   if exist "!targetPath!\webapp" rmdir /s /q "!targetPath!\webapp"
+   move /y "!targetPath!\supersonic-webapp" "!targetPath!\webapp"
    goto :EOF
 ) else (
    call :buildJavaService

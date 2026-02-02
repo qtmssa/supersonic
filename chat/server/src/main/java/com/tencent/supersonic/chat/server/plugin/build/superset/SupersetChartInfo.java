@@ -12,4 +12,6 @@ public class SupersetChartInfo {
     private String guestToken;
 
     private Long datasetId;
+
+    private String embeddedId;
 }

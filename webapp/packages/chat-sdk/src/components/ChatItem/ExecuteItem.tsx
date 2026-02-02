@@ -53,8 +53,7 @@ const ExecuteItem: React.FC<Props> = ({
   const canRenderSuperset =
     data?.queryMode === 'SUPERSET' &&
     supersetResponse &&
-    !supersetResponse.fallback &&
-    !!supersetResponse.webPage?.url;
+    !supersetResponse.fallback;
 
   const getNodeTip = (title: ReactNode, tip?: string | ReactNode) => {
     return (

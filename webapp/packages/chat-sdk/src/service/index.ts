@@ -7,6 +7,7 @@ import {
   ParseDataType,
   SearchRecommendItem,
   SupersetDashboardType,
+  SupersetGuestTokenResp,
 } from '../common/type';
 import { isMobile } from '../utils/utils';
 
@@ -103,6 +104,10 @@ export function pushSupersetChartToDashboard(params: {
   chartId: number;
 }) {
   return axios.post<boolean>(`${prefix}/chat/superset/dashboard/push`, params);
+}
+
+export function fetchSupersetGuestToken(params: { pluginId?: number; embeddedId: string }) {
+  return axios.post<SupersetGuestTokenResp>(`${prefix}/chat/superset/guest-token`, params);
 }
 
 export function switchEntity(entityId: string, modelId?: number, chatId?: number) {

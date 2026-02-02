@@ -254,6 +254,9 @@ public class NL2SQLParser implements ChatQueryParser {
         ParserConfig parserConfig = ContextUtils.getBean(ParserConfig.class);
         int exemplarRecallNumber =
                 Integer.parseInt(parserConfig.getParameterValue(PARSER_EXEMPLAR_RECALL_NUMBER));
+        if (exemplarRecallNumber <= 0) {
+            return;
+        }
         List<Text2SQLExemplar> exemplars = exemplarManager.recallExemplars(memoryCollectionName,
                 queryNLReq.getQueryText(), exemplarRecallNumber);
         queryNLReq.getDynamicExemplars().addAll(exemplars);
