@@ -3,6 +3,7 @@ import ExecuteItem from './ExecuteItem';
 import { MsgDataType } from '../../common/type';
 
 jest.mock('../ChatMsg', () => () => 'chat-msg');
+jest.mock('../ChatMsg/SupersetChart', () => () => <div title="supersetIframe" />);
 jest.mock('react-syntax-highlighter', () => ({
   Prism: () => null,
 }));

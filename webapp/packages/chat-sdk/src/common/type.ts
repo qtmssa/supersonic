@@ -131,7 +131,18 @@ export type SupersetChartResponseType = {
   embeddedId?: string;
   supersetDomain?: string;
   vizType?: string;
+  vizTypeCandidates?: SupersetVizTypeCandidate[];
   dashboards?: SupersetDashboardType[];
+};
+
+export type SupersetVizTypeCandidate = {
+  vizType: string;
+  vizName?: string;
+  chartId?: number;
+  chartUuid?: string;
+  guestToken?: string;
+  embeddedId?: string;
+  supersetDomain?: string;
 };
 
 export type SupersetDashboardType = {

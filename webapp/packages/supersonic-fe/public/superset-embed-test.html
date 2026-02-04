@@ -26,6 +26,10 @@
         width: 520px;
         padding: 6px 8px;
       }
+      select {
+        width: 520px;
+        padding: 6px 8px;
+      }
       button {
         padding: 6px 12px;
       }
@@ -37,27 +41,38 @@
   </head>
   <body>
     <h2>Superset Embed SDK 测试页</h2>
+    <div class="row hint">
+      使用步骤：加载 dashboard 列表并选择 → 确认 Embedded ID → 点击“获取 guestToken” → 确认响应 → 点击“开始嵌入”
+    </div>
     <div class="row">
       <label>Superset 域名</label>
       <input id="supersetDomain" value="http://10.0.12.244:8088" />
     </div>
     <div class="row">
-      <label>Embedded ID</label>
-      <input id="embeddedId" value="c7cda0d6-b9b5-4479-980c-150b84defe80" />
+      <label>Dashboards 接口</label>
+      <input id="dashboardsApi" value="/api/chat/superset/dashboards" />
     </div>
+    <div class="row">
+      <label>Dashboard</label>
+      <select id="dashboardSelect"></select>
+      <button id="refreshDashboardsBtn">加载列表</button>
+    </div>
+    <div class="row">
+      <label>Embedded ID</label>
+      <input id="embeddedId" placeholder="选择 dashboard 后自动填充" />
+    </div>
+    <div class="row hint" id="embeddedIdHint"></div>
+    <div class="row">
+      <label>Auth Token</label>
+      <input id="authToken" placeholder="SUPERSONIC_TOKEN" readonly />
+    </div>
+    <div class="row hint" id="authTokenHint"></div>
     <div class="row">
       <label>Guest Token 接口</label>
       <input id="guestTokenApi" value="/api/chat/superset/guest-token" />
     </div>
     <div class="row">
-      <label>Auth Token(可选)</label>
-      <input id="authToken" placeholder="Bearer Token 或 Cookie" />
-    </div>
-    <div class="row">
-      <label>Guest Token(可选)</label>
-      <input id="guestTokenInput" placeholder="直接粘贴 guest token" />
-    </div>
-    <div class="row">
+      <button id="fetchTokenBtn">获取 guestToken</button>
       <button id="embedBtn">开始嵌入</button>
       <span class="hint">首次加载会请求 guest token</span>
     </div>
@@ -71,12 +86,38 @@
       const { embedDashboard } = window.supersetEmbeddedSdk || {};
       const container = document.getElementById('container');
       const embedBtn = document.getElementById('embedBtn');
+      const fetchTokenBtn = document.getElementById('fetchTokenBtn');
+      const refreshDashboardsBtn = document.getElementById('refreshDashboardsBtn');
+      const dashboardSelect = document.getElementById('dashboardSelect');
+      const dashboardsApiInput = document.getElementById('dashboardsApi');
+      const embeddedIdInput = document.getElementById('embeddedId');
+      const embeddedIdHint = document.getElementById('embeddedIdHint');
+      const authTokenInput = document.getElementById('authToken');
+      const authTokenHint = document.getElementById('authTokenHint');
 
-      const fetchGuestToken = async (apiUrl, embeddedId, authToken) => {
+      const AUTH_TOKEN_KEY = 'SUPERSONIC_TOKEN';
+
+      const syncAuthToken = () => {
+        const token = localStorage.getItem(AUTH_TOKEN_KEY) || '';
+        authTokenInput.value = token;
+        authTokenHint.textContent = token ? '' : '未检测到 SUPERSONIC_TOKEN，auth token 不能为空';
+        return token;
+      };
+
+      const normalizeBearer = token => (token.startsWith('Bearer ') ? token : `Bearer ${token}`);
+
+      const buildAuthHeaders = authToken => {
         const headers = { 'Content-Type': 'application/json' };
         if (authToken) {
-          headers.Authorization = authToken.startsWith('Bearer ') ? authToken : `Bearer ${authToken}`;
+          const bearer = normalizeBearer(authToken);
+          headers.Authorization = bearer;
+          headers.auth = bearer;
         }
+        return headers;
+      };
+
+      const fetchGuestToken = async (apiUrl, embeddedId, authToken) => {
+        const headers = buildAuthHeaders(authToken);
         const resp = await fetch(apiUrl, {
           method: 'POST',
           headers,
@@ -85,16 +126,92 @@
         const data = await resp.json();
         const tokenResult = document.getElementById('tokenResult');
         tokenResult.textContent = `guest-token response: ${JSON.stringify(data)}`;
-        return data?.data?.token || '';
+        const token = data?.data?.token || '';
+        if (token) {
+          alert(`guestToken: ${token}`);
+        } else {
+          alert('guestToken 为空，请检查接口响应');
+        }
+        return token;
+      };
+
+      const fetchDashboards = async ({ silent = false } = {}) => {
+        const apiUrl = dashboardsApiInput.value.trim();
+        const authToken = syncAuthToken();
+        if (!apiUrl) {
+          if (!silent) {
+            alert('请填写 Dashboards 接口');
+          }
+          return [];
+        }
+        if (!authToken) {
+          if (!silent) {
+            alert('auth token 不能为空');
+          }
+          return [];
+        }
+        const resp = await fetch(apiUrl, {
+          method: 'POST',
+          headers: buildAuthHeaders(authToken),
+          body: JSON.stringify({}),
+        });
+        const data = await resp.json();
+        if (Array.isArray(data)) {
+          return data;
+        }
+        if (Array.isArray(data?.data)) {
+          return data.data;
+        }
+        return [];
+      };
+
+      const renderDashboards = dashboards => {
+        dashboardSelect.replaceChildren();
+        const placeholder = document.createElement('option');
+        placeholder.value = '';
+        placeholder.textContent = dashboards.length ? '请选择 dashboard' : '未获取到 dashboard';
+        dashboardSelect.appendChild(placeholder);
+        dashboards.forEach(item => {
+          const option = document.createElement('option');
+          const id = item?.id;
+          const embeddedId = item?.embeddedId || item?.embedded_id || item?.embeddedUuid || '';
+          const title = item?.title || item?.dashboardTitle || '未命名';
+          option.value = embeddedId || '';
+          option.dataset.dashboardId = id == null ? '' : String(id);
+          option.dataset.embeddedId = embeddedId;
+          option.textContent =
+            id == null ? title : `${title} (id: ${id}${embeddedId ? ', embedded' : ''})`;
+          dashboardSelect.appendChild(option);
+        });
+      };
+
+      const syncEmbeddedId = () => {
+        const selected = dashboardSelect.options[dashboardSelect.selectedIndex];
+        if (!selected) {
+          embeddedIdInput.value = '';
+          embeddedIdHint.textContent = '';
+          return;
+        }
+        const embeddedId = selected.dataset.embeddedId || '';
+        embeddedIdInput.value = embeddedId;
+        if (!embeddedId && selected.dataset.dashboardId) {
+          embeddedIdHint.textContent =
+            '当前接口未返回 embeddedId，如需自动填充请让后端补充该字段。';
+        } else {
+          embeddedIdHint.textContent = '';
+        }
       };
 
       const doEmbed = async () => {
+        const authToken = syncAuthToken();
         const supersetDomain = document.getElementById('supersetDomain').value.trim();
-        const embeddedId = document.getElementById('embeddedId').value.trim();
+        const embeddedId = embeddedIdInput.value.trim();
         const guestTokenApi = document.getElementById('guestTokenApi').value.trim();
-        const authToken = document.getElementById('authToken').value.trim();
-        const guestTokenInput = document.getElementById('guestTokenInput').value.trim();
 
+        if (!authToken) {
+          alert('auth token 不能为空');
+          return;
+        }
         if (!supersetDomain || !embeddedId || !guestTokenApi) {
           alert('请填写 Superset 域名、Embedded ID 和 Guest Token 接口');
           return;
@@ -109,10 +226,7 @@
           id: embeddedId,
           supersetDomain,
           mountPoint: container,
-          fetchGuestToken: () =>
-            guestTokenInput
-              ? Promise.resolve(guestTokenInput)
-              : fetchGuestToken(guestTokenApi, embeddedId, authToken),
+          fetchGuestToken: () => fetchGuestToken(guestTokenApi, embeddedId, authToken),
           dashboardUiConfig: {
             hideTitle: true,
             hideTab: true,
@@ -122,12 +236,56 @@
         });
       };
 
+      fetchTokenBtn.addEventListener('click', () => {
+        const authToken = syncAuthToken();
+        const embeddedId = embeddedIdInput.value.trim();
+        const guestTokenApi = document.getElementById('guestTokenApi').value.trim();
+        if (!authToken) {
+          alert('auth token 不能为空');
+          return;
+        }
+        if (!embeddedId || !guestTokenApi) {
+          alert('请填写 Embedded ID 和 Guest Token 接口');
+          return;
+        }
+        fetchGuestToken(guestTokenApi, embeddedId, authToken).catch(err => {
+          console.error(err);
+          alert('获取 guestToken 失败，请查看控制台错误');
+        });
+      });
+
       embedBtn.addEventListener('click', () => {
         doEmbed().catch(err => {
           console.error(err);
           alert('嵌入失败，请查看控制台错误');
         });
       });
+
+      refreshDashboardsBtn.addEventListener('click', () => {
+        fetchDashboards()
+          .then(dashboards => {
+            renderDashboards(dashboards);
+            syncEmbeddedId();
+          })
+          .catch(err => {
+            console.error(err);
+            alert('加载 dashboard 失败，请查看控制台错误');
+          });
+      });
+
+      dashboardSelect.addEventListener('change', () => {
+        syncEmbeddedId();
+      });
+
+      syncAuthToken();
+      fetchDashboards({ silent: true })
+        .then(dashboards => {
+          renderDashboards(dashboards);
+          syncEmbeddedId();
+        })
+        .catch(err => {
+          console.error(err);
+        });
     </script>
   </body>
 </html>

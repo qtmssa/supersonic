@@ -92,7 +92,33 @@ public class SupersetApiClient {
 
     public List<SupersetDashboardInfo> listDashboards() {
         Map<String, Object> response = get(DASHBOARD_API + "?q=(page:0,page_size:200)");
-        return extractDashboards(response);
+        List<SupersetDashboardInfo> dashboards = extractDashboards(response);
+        for (SupersetDashboardInfo dashboard : dashboards) {
+            if (dashboard == null || dashboard.getId() == null) {
+                continue;
+            }
+            try {
+                String embeddedId = fetchEmbeddedDashboardUuid(dashboard.getId());
+                if (StringUtils.isNotBlank(embeddedId)) {
+                    dashboard.setEmbeddedId(embeddedId);
+                }
+            } catch (Exception ex) {
+                log.warn("superset embedded uuid fetch failed, dashboardId={}", dashboard.getId(),
+                        ex);
+            }
+        }
+        return dashboards;
+    }
+
+    public Map<String, Object> listDatabases(String accessToken, int page, int pageSize) {
+        int safePage = Math.max(0, page);
+        int safeSize = Math.max(1, pageSize);
+        String query = String.format("(page:%d,page_size:%d)", safePage, safeSize);
+        return getWithAccessToken("/api/v1/database/?q=" + query, accessToken);
+    }
+
+    public String fetchAccessToken() {
+        return ensureAccessToken();
     }
 
     public String createEmbeddedGuestToken(String embeddedUuid) {
@@ -328,6 +354,16 @@ public class SupersetApiClient {
 
     private Map<String, Object> get(String path) {
         return request(HttpMethod.GET, path, null);
+    }
+
+    private Map<String, Object> getWithAccessToken(String path, String accessToken) {
+        if (StringUtils.isBlank(accessToken)) {
+            throw new IllegalArgumentException("superset access token required");
+        }
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        headers.set("Authorization", "Bearer " + accessToken);
+        return execute(HttpMethod.GET, path, null, headers);
     }
 
     HttpHeaders buildHeaders() {

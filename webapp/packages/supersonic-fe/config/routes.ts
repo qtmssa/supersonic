@@ -49,6 +49,12 @@ const ROUTES = [
     envEnableList: [ENV_KEY.CHAT],
   },
   {
+    path: '/message',
+    name: 'message',
+    component: './MessageManage',
+    envEnableList: [ENV_KEY.CHAT],
+  },
+  {
     path: '/model/metric/edit/:metricId',
     name: 'metricEdit',
     hideInMenu: true,

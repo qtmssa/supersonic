@@ -22,6 +22,8 @@ public class SupersetChartResp {
 
     private String vizType;
 
+    private List<SupersetChartCandidate> vizTypeCandidates;
+
     private Long chartId;
 
     private String chartUuid;
