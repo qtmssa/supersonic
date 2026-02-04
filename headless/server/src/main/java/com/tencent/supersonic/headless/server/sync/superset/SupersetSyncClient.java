@@ -25,4 +25,8 @@ public interface SupersetSyncClient {
     void deleteDatasetColumn(Long datasetId, Long columnId);
 
     void deleteDatasetMetric(Long datasetId, Long metricId);
+
+    default String getSupersetVersion() {
+        return null;
+    }
 }

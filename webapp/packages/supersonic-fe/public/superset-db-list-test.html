@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Superset 数据库列表测试</title>
+    <style>
+      :root {
+        color-scheme: light;
+      }
+      body {
+        font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+        margin: 24px;
+        color: #111;
+      }
+      h1 {
+        font-size: 20px;
+        margin-bottom: 12px;
+      }
+      .row {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+        margin-bottom: 12px;
+      }
+      label {
+        font-size: 13px;
+        display: block;
+        margin-bottom: 6px;
+      }
+      input {
+        width: 360px;
+        padding: 8px 10px;
+        border: 1px solid #ccc;
+        border-radius: 6px;
+      }
+      button {
+        padding: 8px 12px;
+        border: 1px solid #111;
+        border-radius: 6px;
+        background: #111;
+        color: #fff;
+        cursor: pointer;
+      }
+      button:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+      }
+      pre {
+        background: #f6f6f6;
+        padding: 12px;
+        border-radius: 8px;
+        max-height: 420px;
+        overflow: auto;
+      }
+      table {
+        border-collapse: collapse;
+        width: 100%;
+        margin-top: 12px;
+      }
+      th,
+      td {
+        border: 1px solid #ddd;
+        padding: 8px;
+        font-size: 13px;
+      }
+      th {
+        background: #fafafa;
+        text-align: left;
+      }
+      .hint {
+        font-size: 12px;
+        color: #666;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Superset 数据库列表测试</h1>
+    <div class="row">
+      <div>
+        <label>Supersonic API Base URL</label>
+        <input id="supersonicUrl" placeholder="http://127.0.0.1:9090" />
+      </div>
+    </div>
+    <div class="row">
+      <button id="loadBtn">自动登录并读取数据库列表</button>
+    </div>
+    <div class="hint">
+      从 localStorage.SUPERSONIC_TOKEN 读取 Supersonic token，调用 /api/chat/superset/jwt-login
+      获取 Superset JWT，然后通过 /api/chat/superset/databases 读取数据库列表
+    </div>
+    <div id="status"></div>
+    <table id="resultTable" style="display: none;">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>database_name</th>
+          <th>backend</th>
+          <th>uuid</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+    <h3>数据库列表原始响应</h3>
+    <pre id="raw"></pre>
+
+    <script>
+      const supersonicUrlInput = document.getElementById('supersonicUrl');
+      const loadBtn = document.getElementById('loadBtn');
+      const statusEl = document.getElementById('status');
+      const rawEl = document.getElementById('raw');
+      const table = document.getElementById('resultTable');
+      const tbody = table.querySelector('tbody');
+
+      function normalizeBaseUrl(value) {
+        const trimmed = (value || '').trim();
+        if (!trimmed) return '';
+        return trimmed.endsWith('/') ? trimmed.slice(0, -1) : trimmed;
+      }
+
+      function setStatus(text, isError) {
+        statusEl.textContent = text;
+        statusEl.style.color = isError ? '#b00020' : '#111';
+      }
+
+      function renderTable(list) {
+        tbody.innerHTML = '';
+        if (!Array.isArray(list) || list.length === 0) {
+          table.style.display = 'none';
+          return;
+        }
+        for (const item of list) {
+          const tr = document.createElement('tr');
+          const id = item.id ?? '';
+          const name = item.database_name ?? item.name ?? '';
+          const backend = item.backend ?? '';
+          const uuid = item.uuid ?? '';
+          tr.innerHTML = `<td>${id}</td><td>${name}</td><td>${backend}</td><td>${uuid}</td>`;
+          tbody.appendChild(tr);
+        }
+        table.style.display = '';
+      }
+
+      loadBtn.addEventListener('click', async () => {
+        const supersonicUrl = normalizeBaseUrl(
+          supersonicUrlInput.value || window.location.origin,
+        );
+        if (!supersonicUrl || supersonicUrl.startsWith('file://')) {
+          setStatus('请填写 Supersonic API Base URL', true);
+          return;
+        }
+        const supersonicToken = localStorage.getItem('SUPERSONIC_TOKEN') || '';
+        if (!supersonicToken) {
+          setStatus('未检测到 SUPERSONIC_TOKEN，请先登录 Supersonic', true);
+          return;
+        }
+        loadBtn.disabled = true;
+        setStatus('请求中...', false);
+        rawEl.textContent = '';
+        table.style.display = 'none';
+        try {
+          const loginUrl = `${supersonicUrl}/api/chat/superset/jwt-login`;
+          const loginResp = await fetch(loginUrl, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${supersonicToken}`,
+            },
+          });
+          const loginText = await loginResp.text();
+          let loginData = null;
+          try {
+            loginData = JSON.parse(loginText);
+          } catch (e) {
+            setStatus('Superset JWT 登录响应不是 JSON', true);
+            rawEl.textContent = loginText;
+            return;
+          }
+          const loginPayload = loginData && loginData.data ? loginData.data : loginData;
+          if (!loginResp.ok || !loginPayload || !loginPayload.accessToken) {
+            setStatus('Superset JWT 登录失败，请检查配置', true);
+            rawEl.textContent = loginText;
+            return;
+          }
+          const listUrl = `${supersonicUrl}/api/chat/superset/databases`;
+          const resp = await fetch(listUrl, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${supersonicToken}`,
+            },
+            body: JSON.stringify({
+              page: 0,
+              pageSize: 500,
+              accessToken: loginPayload.accessToken,
+            }),
+          });
+          const text = await resp.text();
+          rawEl.textContent = text;
+          if (!resp.ok) {
+            setStatus(`请求失败: ${resp.status} ${resp.statusText}`, true);
+            return;
+          }
+          let data = null;
+          try {
+            data = JSON.parse(text);
+          } catch (e) {
+            setStatus('响应不是 JSON', true);
+            return;
+          }
+          const list = data && data.result ? data.result : [];
+          setStatus(`读取完成，数量: ${Array.isArray(list) ? list.length : 0}`, false);
+          renderTable(list);
+        } catch (err) {
+          setStatus(`请求异常: ${err.message || err}`, true);
+        } finally {
+          loadBtn.disabled = false;
+        }
+      });
+    </script>
+  </body>
+</html>

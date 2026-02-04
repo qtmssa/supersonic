@@ -1,25 +1,33 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { Button, Dropdown, message } from 'antd';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Button, Dropdown, Segmented, message } from 'antd';
 import { embedDashboard } from '@superset-ui/embedded-sdk';
 import {
   MsgDataType,
   SupersetChartResponseType,
   SupersetDashboardType,
+  SupersetVizTypeCandidate,
 } from '../../../common/type';
 import {
   fetchSupersetDashboards,
   fetchSupersetGuestToken,
   pushSupersetChartToDashboard,
 } from '../../../service';
-import { isMobile } from '../../../utils/utils';
 
 type Props = {
   id: string | number;
   data: MsgDataType;
+  triggerResize?: boolean;
 };
 
 const DEFAULT_HEIGHT = 800;
 const SUPERSET_SINGLE_CHART_PREFIX = 'supersonic_';
+const SUPERSET_IFRAME_TITLE = 'supersetIframe';
+
+type EmbedInstance = {
+  unmount: () => void;
+  getScrollSize?: () => Promise<{ height?: number; width?: number }>;
+  setThemeMode?: (mode: 'light' | 'dark') => void | Promise<void>;
+};
 
 export const filterTemporaryDashboards = (
   dashboardList: SupersetDashboardType[],
@@ -38,17 +46,90 @@ export const filterTemporaryDashboards = (
   });
 };
 
-const SupersetChart: React.FC<Props> = ({ id, data }) => {
+const SupersetChart: React.FC<Props> = ({ id, data, triggerResize }) => {
   const [height, setHeight] = useState(DEFAULT_HEIGHT);
+  const [backgroundColor, setBackgroundColor] = useState<string>();
   const [dashboards, setDashboards] = useState<SupersetDashboardType[]>([]);
   const [dashboardsLoading, setDashboardsLoading] = useState(false);
   const [pushLoading, setPushLoading] = useState(false);
+  const [candidateIndex, setCandidateIndex] = useState(0);
   const embedContainerRef = useRef<HTMLDivElement>(null);
-  const embedInstanceRef = useRef<{ unmount: () => void } | null>(null);
+  const embedInstanceRef = useRef<EmbedInstance | null>(null);
+  const backgroundColorRef = useRef<string>();
   const initialGuestTokenRef = useRef<string | undefined>(undefined);
   const response = data.response as SupersetChartResponseType;
   const webPage = response?.webPage;
-  const guestToken = response?.guestToken;
+  const vizTypeCandidates = useMemo(() => {
+    const candidates = response?.vizTypeCandidates;
+    if (Array.isArray(candidates) && candidates.length > 0) {
+      return candidates.filter(Boolean);
+    }
+    if (response?.embeddedId || response?.supersetDomain || response?.chartId) {
+      return [
+        {
+          vizType: response?.vizType || '',
+          vizName: response?.vizType,
+          chartId: response?.chartId,
+          chartUuid: response?.chartUuid,
+          guestToken: response?.guestToken,
+          embeddedId: response?.embeddedId,
+          supersetDomain: response?.supersetDomain,
+        },
+      ];
+    }
+    return [];
+  }, [response]);
+  const activeCandidate = useMemo(() => {
+    if (!vizTypeCandidates.length) {
+      return null;
+    }
+    const index = Math.min(candidateIndex, vizTypeCandidates.length - 1);
+    return vizTypeCandidates[index];
+  }, [candidateIndex, vizTypeCandidates]);
+  const guestToken = activeCandidate ? activeCandidate.guestToken : response?.guestToken;
+  const resolveGuestToken = (payload: any) => {
+    if (!payload) {
+      return '';
+    }
+    if (typeof payload === 'string') {
+      return payload;
+    }
+    if (typeof payload.token === 'string' && payload.token) {
+      return payload.token;
+    }
+    if (typeof payload?.data?.token === 'string' && payload.data.token) {
+      return payload.data.token;
+    }
+    return '';
+  };
+  const resolveJwtExp = (token: string) => {
+    if (!token || typeof token !== 'string') {
+      return null;
+    }
+    const parts = token.split('.');
+    if (parts.length < 2) {
+      return null;
+    }
+    try {
+      const normalized = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+      const padding = normalized.length % 4 === 0 ? '' : '='.repeat(4 - (normalized.length % 4));
+      const payload = JSON.parse(atob(`${normalized}${padding}`));
+      const exp = payload?.exp;
+      if (typeof exp !== 'number') {
+        return null;
+      }
+      return exp > 1000000000000 ? exp : exp * 1000;
+    } catch (error) {
+      return null;
+    }
+  };
+  const isTokenExpiringSoon = (token: string) => {
+    const exp = resolveJwtExp(token);
+    if (!exp) {
+      return false;
+    }
+    return exp - Date.now() < 60000;
+  };
 
   const buildParamValue = (value: any) => {
     if (value === null || value === undefined) {
@@ -65,18 +146,44 @@ const SupersetChart: React.FC<Props> = ({ id, data }) => {
     return Array.isArray(rawParams) ? rawParams : [];
   }, [webPage]);
 
+  const minHeight = useMemo(() => {
+    const heightValue =
+      params?.find((option: any) => option.paramType === 'FORWARD' && option.key === 'height')
+        ?.value ?? DEFAULT_HEIGHT;
+    const numericValue = typeof heightValue === 'number' ? heightValue : Number(heightValue);
+    if (!Number.isFinite(numericValue) || numericValue <= 0) {
+      return DEFAULT_HEIGHT;
+    }
+    return numericValue;
+  }, [params]);
+
   useEffect(() => {
     initialGuestTokenRef.current = guestToken;
   }, [guestToken]);
 
+  useEffect(() => {
+    setCandidateIndex(0);
+  }, [id]);
+
+  useEffect(() => {
+    setCandidateIndex(prev => (prev < vizTypeCandidates.length ? prev : 0));
+  }, [vizTypeCandidates.length]);
+
   const embedInfo = useMemo(() => {
-    const embeddedId = response?.embeddedId;
-    const supersetDomain = response?.supersetDomain;
+    const embeddedId = activeCandidate ? activeCandidate.embeddedId : response?.embeddedId;
+    const supersetDomain = activeCandidate
+      ? activeCandidate.supersetDomain
+      : response?.supersetDomain;
     if (embeddedId && supersetDomain) {
       return { embedId: embeddedId, supersetDomain };
     }
     return null;
-  }, [response?.embeddedId, response?.supersetDomain]);
+  }, [
+    activeCandidate?.embeddedId,
+    activeCandidate?.supersetDomain,
+    response?.embeddedId,
+    response?.supersetDomain,
+  ]);
 
   const valueParams = useMemo(() => {
     return (params || [])
@@ -91,11 +198,108 @@ const SupersetChart: React.FC<Props> = ({ id, data }) => {
   }, [params]);
 
   useEffect(() => {
-    const heightValue =
-      params?.find((option: any) => option.paramType === 'FORWARD' && option.key === 'height')
-        ?.value || DEFAULT_HEIGHT;
-    setHeight(heightValue);
-  }, [params]);
+    setHeight(minHeight);
+  }, [minHeight]);
+
+  const resolveThemeMode = useCallback((): 'light' | 'dark' => {
+    if (typeof document === 'undefined') {
+      return 'light';
+    }
+    const docElement = document.documentElement;
+    const themeAttr = docElement.getAttribute('data-theme') || docElement.dataset.theme || '';
+    const normalized = themeAttr.toLowerCase();
+    if (normalized.includes('dark')) {
+      return 'dark';
+    }
+    if (normalized.includes('light')) {
+      return 'light';
+    }
+    const bodyClass = document.body?.className || '';
+    if (bodyClass.includes('dark')) {
+      return 'dark';
+    }
+    if (bodyClass.includes('light')) {
+      return 'light';
+    }
+    if (typeof window !== 'undefined' && window.matchMedia) {
+      return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    }
+    return 'light';
+  }, []);
+
+  const resolveBackgroundColor = useCallback(() => {
+    if (typeof window === 'undefined') {
+      return undefined;
+    }
+    const rootStyle = window.getComputedStyle(document.documentElement);
+    const bodyStyle = window.getComputedStyle(document.body);
+    const candidates = [
+      rootStyle.getPropertyValue('--component-background'),
+      rootStyle.getPropertyValue('--body-background'),
+      rootStyle.getPropertyValue('--light-background'),
+      bodyStyle.backgroundColor,
+      '#ffffff',
+    ];
+    const resolved = candidates.find(value => value && value.trim())?.trim();
+    return resolved || '#ffffff';
+  }, []);
+
+  const syncTheme = useCallback(
+    async (instance?: EmbedInstance | null) => {
+      const mode = resolveThemeMode();
+      const background = resolveBackgroundColor();
+      backgroundColorRef.current = background;
+      setBackgroundColor(background);
+      const target = instance || embedInstanceRef.current;
+      if (target?.setThemeMode) {
+        try {
+          await target.setThemeMode(mode);
+        } catch (error) {
+          // ignore theme sync error to avoid blocking rendering
+        }
+      }
+      const iframe = embedContainerRef.current?.querySelector('iframe');
+      if (iframe && background) {
+        iframe.style.backgroundColor = background;
+      }
+    },
+    [resolveBackgroundColor, resolveThemeMode]
+  );
+
+  const computeAvailableHeight = useCallback(() => {
+    if (typeof window === 'undefined') {
+      return minHeight;
+    }
+    const viewportHeight = window.innerHeight || document.documentElement.clientHeight || minHeight;
+    const rect = embedContainerRef.current?.getBoundingClientRect();
+    const top = rect ? Math.max(rect.top, 0) : 0;
+    const padding = 24;
+    const available = viewportHeight - top - padding;
+    return Math.max(available, minHeight);
+  }, [minHeight]);
+
+  const getDashboardScrollHeight = useCallback(async () => {
+    const instance = embedInstanceRef.current;
+    if (!instance?.getScrollSize) {
+      return null;
+    }
+    try {
+      const size = await instance.getScrollSize();
+      if (typeof size?.height === 'number' && Number.isFinite(size.height)) {
+        return size.height;
+      }
+    } catch (error) {
+      return null;
+    }
+    return null;
+  }, []);
+
+  const syncHeight = useCallback(async () => {
+    const baseHeight = computeAvailableHeight();
+    const scrollHeight = await getDashboardScrollHeight();
+    const nextHeight = scrollHeight && scrollHeight > baseHeight ? scrollHeight : baseHeight;
+    setHeight(prev => (prev === nextHeight ? prev : nextHeight));
+  }, [computeAvailableHeight, getDashboardScrollHeight]);
 
   useEffect(() => {
     if (!embedInfo || !embedContainerRef.current) {
@@ -106,26 +310,39 @@ const SupersetChart: React.FC<Props> = ({ id, data }) => {
     embedInstanceRef.current = null;
     embedContainerRef.current.replaceChildren();
     const fetchGuestToken = async () => {
+      let initialToken: string | undefined;
       if (initialGuestTokenRef.current) {
-        const token = initialGuestTokenRef.current;
+        initialToken = initialGuestTokenRef.current;
         initialGuestTokenRef.current = undefined;
-        return token;
+        if (!isTokenExpiringSoon(initialToken)) {
+          return initialToken;
+        }
       }
       const responseToken = await fetchSupersetGuestToken({
         pluginId: response?.pluginId,
         embeddedId: embedInfo.embedId,
       });
-      return responseToken?.data?.token || '';
+      const token = resolveGuestToken(responseToken);
+      if (!token) {
+        const code = responseToken?.code;
+        const msg = responseToken?.msg;
+        const details = [code ? `code=${code}` : null, msg ? `msg=${msg}` : null]
+          .filter(Boolean)
+          .join(', ');
+        throw new Error(details ? `guest token missing (${details})` : 'guest token missing');
+      }
+      return token;
     };
     embedDashboard({
       id: embedInfo.embedId,
       supersetDomain: embedInfo.supersetDomain,
       mountPoint: embedContainerRef.current,
+      iframeTitle: SUPERSET_IFRAME_TITLE,
       fetchGuestToken,
       dashboardUiConfig: {
         hideTitle: true,
         hideTab: true,
-        hideChartControls: true,
+        hideChartControls: false,
         filters: { visible: false, expanded: false },
         urlParams: Object.keys(valueParams || {}).length > 0 ? valueParams : undefined,
       },
@@ -136,12 +353,27 @@ const SupersetChart: React.FC<Props> = ({ id, data }) => {
           return;
         }
         embedInstanceRef.current = instance;
+        syncTheme(instance);
         const iframe = embedContainerRef.current?.querySelector('iframe');
         if (iframe) {
           iframe.style.width = '100%';
           iframe.style.height = '100%';
           iframe.style.border = 'none';
+          iframe.style.display = 'block';
+          iframe.title = SUPERSET_IFRAME_TITLE;
+          const currentBackground = backgroundColorRef.current || resolveBackgroundColor();
+          if (currentBackground) {
+            iframe.style.backgroundColor = currentBackground;
+          }
         }
+        requestAnimationFrame(() => {
+          syncHeight();
+        });
+        setTimeout(() => {
+          if (!cancelled) {
+            syncHeight();
+          }
+        }, 200);
       })
       .catch(() => {
         message.error('Superset 嵌入失败');
@@ -151,7 +383,7 @@ const SupersetChart: React.FC<Props> = ({ id, data }) => {
       embedInstanceRef.current?.unmount();
       embedInstanceRef.current = null;
     };
-  }, [embedInfo, response?.pluginId, valueParams]);
+  }, [embedInfo, resolveBackgroundColor, response?.pluginId, syncHeight, syncTheme, valueParams]);
 
   useEffect(() => {
     if (Array.isArray(response?.dashboards)) {
@@ -177,11 +409,69 @@ const SupersetChart: React.FC<Props> = ({ id, data }) => {
       });
   }, [response?.dashboards, response?.pluginId]);
 
+  useEffect(() => {
+    if (!embedInfo) {
+      return;
+    }
+    if (typeof window === 'undefined') {
+      return;
+    }
+    const handleResize = () => {
+      syncHeight();
+    };
+    window.addEventListener('resize', handleResize);
+    return () => {
+      window.removeEventListener('resize', handleResize);
+    };
+  }, [embedInfo, syncHeight]);
+
+  useEffect(() => {
+    if (triggerResize) {
+      syncHeight();
+    }
+  }, [syncHeight, triggerResize]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof MutationObserver === 'undefined') {
+      return;
+    }
+    const handleThemeChange = () => {
+      syncTheme();
+    };
+    const observer = new MutationObserver(handleThemeChange);
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['data-theme', 'class', 'style'],
+    });
+    const media = window.matchMedia?.('(prefers-color-scheme: dark)');
+    if (media) {
+      const onMediaChange = () => handleThemeChange();
+      if (typeof media.addEventListener === 'function') {
+        media.addEventListener('change', onMediaChange);
+      } else if (typeof media.addListener === 'function') {
+        media.addListener(onMediaChange);
+      }
+      return () => {
+        observer.disconnect();
+        if (typeof media.removeEventListener === 'function') {
+          media.removeEventListener('change', onMediaChange);
+        } else if (typeof media.removeListener === 'function') {
+          media.removeListener(onMediaChange);
+        }
+      };
+    }
+    return () => {
+      observer.disconnect();
+    };
+  }, [syncTheme]);
+
+  const activeChartId = activeCandidate ? activeCandidate.chartId : response?.chartId;
+
   const handlePush = (dashboardId?: number) => {
     if (!dashboardId) {
       return;
     }
-    if (!response?.chartId) {
+    if (!activeChartId) {
       message.error('Chart 信息缺失');
       return;
     }
@@ -189,7 +479,7 @@ const SupersetChart: React.FC<Props> = ({ id, data }) => {
     pushSupersetChartToDashboard({
       pluginId: response?.pluginId,
       dashboardId,
-      chartId: response.chartId,
+      chartId: activeChartId,
     })
       .then(() => {
         message.success('已推送到看板');
@@ -221,7 +511,16 @@ const SupersetChart: React.FC<Props> = ({ id, data }) => {
           },
         ];
 
-  const showPushButton = !response?.fallback && response?.pluginId && response?.chartId;
+  const candidateOptions = useMemo(
+    () =>
+      vizTypeCandidates.map((candidate: SupersetVizTypeCandidate, index: number) => ({
+        label: candidate?.vizName || candidate?.vizType || `候选${index + 1}`,
+        value: index,
+      })),
+    [vizTypeCandidates]
+  );
+  const showCandidateSwitch = candidateOptions.length > 1;
+  const showPushButton = Boolean(!response?.fallback && response?.pluginId && activeChartId);
 
   return (
     <>
@@ -243,16 +542,32 @@ const SupersetChart: React.FC<Props> = ({ id, data }) => {
           </Dropdown>
         </div>
       )}
+      {showCandidateSwitch && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+          <span style={{ color: 'rgba(0, 0, 0, 0.45)', fontSize: 12 }}>图表形式</span>
+          <Segmented
+            size="small"
+            options={candidateOptions}
+            value={candidateIndex}
+            onChange={value => {
+              const resolved = typeof value === 'number' ? value : Number(value);
+              setCandidateIndex(Number.isFinite(resolved) ? resolved : 0);
+            }}
+          />
+        </div>
+      )}
       {embedInfo ? (
         <div
           ref={embedContainerRef}
+          data-embed-id={id}
           style={{
-            width: isMobile ? 'calc(100vw - 20px)' : 'calc(100vw - 410px)',
+            width: '100%',
             height,
+            backgroundColor,
           }}
         />
       ) : (
-        <div style={{ width: '100%', height }}>
+        <div data-embed-id={id} style={{ width: '100%', height, backgroundColor }}>
           Superset 嵌入信息缺失，无法渲染看板。
         </div>
       )}

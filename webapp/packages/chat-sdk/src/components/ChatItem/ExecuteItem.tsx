@@ -176,7 +176,11 @@ const ExecuteItem: React.FC<Props> = ({
             data?.queryMode === 'AGENT_SERVICE' ? (
             data?.textResult
           ) : canRenderSuperset ? (
-            <SupersetChart id={queryId ?? data?.queryId ?? data?.id ?? ''} data={data} />
+            <SupersetChart
+              id={queryId ?? data?.queryId ?? data?.id ?? ''}
+              data={data}
+              triggerResize={triggerResize}
+            />
           ) : data?.queryMode === 'WEB_PAGE' ? (
             <WebPage id={queryId!} data={data} />
           ) : (

@@ -25,6 +25,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
 import org.springframework.util.CollectionUtils;
+import org.springframework.web.client.HttpStatusCodeException;
 
 import java.net.URI;
 import java.net.URLEncoder;
@@ -149,7 +150,18 @@ public class SupersetSyncService {
             }
             return merged;
         }
-        Long createdId = syncClient.createDataset(expected);
+        Long createdId;
+        try {
+            createdId = syncClient.createDataset(expected);
+        } catch (HttpStatusCodeException ex) {
+            if (shouldIgnoreDuplicateCreate(ex)) {
+                log.warn(
+                        "superset dataset create ignored for superset 6.0.0, name={}, status={}, body={}",
+                        expected.getTableName(), ex.getStatusCode(), abbreviateErrorBody(ex));
+                return null;
+            }
+            throw ex;
+        }
         if (createdId == null) {
             return null;
         }
@@ -268,13 +280,25 @@ public class SupersetSyncService {
                 if (existing == null) {
                     log.debug("superset database not found, create required, name={}",
                             expected.getName());
-                    Long createdId = syncClient.createDatabase(expected);
-                    if (createdId != null) {
-                        log.debug("superset database created, name={}, id={}", expected.getName(),
-                                createdId);
-                        stats.incCreated();
-                    } else {
-                        stats.incFailed();
+                    try {
+                        Long createdId = syncClient.createDatabase(expected);
+                        if (createdId != null) {
+                            log.debug("superset database created, name={}, id={}",
+                                    expected.getName(), createdId);
+                            stats.incCreated();
+                        } else {
+                            stats.incFailed();
+                        }
+                    } catch (HttpStatusCodeException ex) {
+                        if (shouldIgnoreDuplicateCreate(ex)) {
+                            log.warn(
+                                    "superset database create ignored for superset 6.0.0, name={}, status={}, body={}",
+                                    expected.getName(), ex.getStatusCode(),
+                                    abbreviateErrorBody(ex));
+                            stats.incSkipped();
+                        } else {
+                            throw ex;
+                        }
                     }
                     continue;
                 }
@@ -348,24 +372,36 @@ public class SupersetSyncService {
                 String key = datasetKey(expected);
                 SupersetDatasetInfo existing = datasetMap.get(key);
                 if (existing == null) {
-                    Long createdId = syncClient.createDataset(expected);
-                    if (createdId != null) {
-                        expected.setId(createdId);
-                        if (shouldUpdateDataset(expected)) {
-                            SupersetDatasetInfo current = syncClient.fetchDataset(createdId);
-                            if (current == null) {
-                                log.warn(
-                                        "superset dataset fetch failed after create, skip update, id={}",
-                                        createdId);
-                            } else {
-                                SupersetDatasetInfo merged = mergeDatasetSchema(expected, current,
-                                        properties.getSync().isRebuild());
-                                syncClient.updateDataset(createdId, merged);
+                    try {
+                        Long createdId = syncClient.createDataset(expected);
+                        if (createdId != null) {
+                            expected.setId(createdId);
+                            if (shouldUpdateDataset(expected)) {
+                                SupersetDatasetInfo current = syncClient.fetchDataset(createdId);
+                                if (current == null) {
+                                    log.warn(
+                                            "superset dataset fetch failed after create, skip update, id={}",
+                                            createdId);
+                                } else {
+                                    SupersetDatasetInfo merged = mergeDatasetSchema(expected,
+                                            current, properties.getSync().isRebuild());
+                                    syncClient.updateDataset(createdId, merged);
+                                }
                             }
+                            stats.incCreated();
+                        } else {
+                            stats.incFailed();
                         }
-                        stats.incCreated();
-                    } else {
-                        stats.incFailed();
+                    } catch (HttpStatusCodeException ex) {
+                        if (shouldIgnoreDuplicateCreate(ex)) {
+                            log.warn(
+                                    "superset dataset create ignored for superset 6.0.0, name={}, status={}, body={}",
+                                    expected.getTableName(), ex.getStatusCode(),
+                                    abbreviateErrorBody(ex));
+                            stats.incSkipped();
+                        } else {
+                            throw ex;
+                        }
                     }
                     continue;
                 }
@@ -425,11 +461,21 @@ public class SupersetSyncService {
             if (existing == null) {
                 log.debug("superset database not found, create required, name={}",
                         expected.getName());
-                Long createdId = syncClient.createDatabase(expected);
-                if (createdId != null) {
-                    log.debug("superset database created, name={}, id={}", expected.getName(),
-                            createdId);
-                    mapping.put(database.getId(), createdId);
+                try {
+                    Long createdId = syncClient.createDatabase(expected);
+                    if (createdId != null) {
+                        log.debug("superset database created, name={}, id={}", expected.getName(),
+                                createdId);
+                        mapping.put(database.getId(), createdId);
+                    }
+                } catch (HttpStatusCodeException ex) {
+                    if (shouldIgnoreDuplicateCreate(ex)) {
+                        log.warn(
+                                "superset database create ignored for superset 6.0.0, name={}, status={}, body={}",
+                                expected.getName(), ex.getStatusCode(), abbreviateErrorBody(ex));
+                    } else {
+                        throw ex;
+                    }
                 }
                 continue;
             }
@@ -1449,6 +1495,51 @@ public class SupersetSyncService {
             normalized = normalized.substring(0, normalized.length() - 1);
         }
         return StringUtils.normalizeSpace(normalized);
+    }
+
+    private boolean shouldIgnoreDuplicateCreate(HttpStatusCodeException ex) {
+        if (ex == null || ex.getStatusCode() == null || ex.getStatusCode().value() != 422) {
+            return false;
+        }
+        String version = normalizeSupersetVersion(syncClient.getSupersetVersion());
+        if (!"6.0.0".equals(version)) {
+            return false;
+        }
+        return isDuplicateCreateError(ex);
+    }
+
+    private boolean isDuplicateCreateError(HttpStatusCodeException ex) {
+        String body = ex.getResponseBodyAsString();
+        if (StringUtils.isBlank(body)) {
+            return false;
+        }
+        return StringUtils.containsIgnoreCase(body, "already exists");
+    }
+
+    private String normalizeSupersetVersion(String version) {
+        if (StringUtils.isBlank(version)) {
+            return null;
+        }
+        String normalized = version.trim();
+        if (normalized.startsWith("v") || normalized.startsWith("V")) {
+            normalized = normalized.substring(1);
+        }
+        int spaceIndex = normalized.indexOf(' ');
+        if (spaceIndex > 0) {
+            normalized = normalized.substring(0, spaceIndex);
+        }
+        return StringUtils.trimToNull(normalized);
+    }
+
+    private String abbreviateErrorBody(HttpStatusCodeException ex) {
+        if (ex == null) {
+            return "";
+        }
+        String body = ex.getResponseBodyAsString();
+        if (StringUtils.isBlank(body)) {
+            return "";
+        }
+        return StringUtils.abbreviate(body, 200);
     }
 
     private String encodeUriComponent(String value) {

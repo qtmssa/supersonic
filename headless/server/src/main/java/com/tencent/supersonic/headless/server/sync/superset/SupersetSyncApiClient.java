@@ -30,12 +30,15 @@ public class SupersetSyncApiClient implements SupersetSyncClient {
     private static final String LOGIN_API = "/api/v1/security/login";
     private static final String REFRESH_API = "/api/v1/security/refresh";
     private static final String CSRF_API = "/api/v1/security/csrf_token/";
+    private static final String VERSION_API = "/api/v1/version";
+    private static final String HEALTH_API = "/api/v1/health";
     private static final String AUTH_STRATEGY_API_KEY_FIRST = "API_KEY_FIRST";
 
     private final SupersetSyncProperties properties;
     private final RestTemplate restTemplate;
     private final String baseUrl;
     private JwtSession jwtSession;
+    private volatile String supersetVersion;
 
     private static class JwtSession {
         private String accessToken;
@@ -54,6 +57,23 @@ public class SupersetSyncApiClient implements SupersetSyncClient {
         factory.setReadTimeout(timeoutMs);
         this.restTemplate = new RestTemplate(factory);
         this.baseUrl = normalizeBaseUrl(properties.getBaseUrl());
+    }
+
+    @Override
+    public String getSupersetVersion() {
+        if (StringUtils.isNotBlank(supersetVersion)) {
+            return supersetVersion;
+        }
+        synchronized (this) {
+            if (StringUtils.isNotBlank(supersetVersion)) {
+                return supersetVersion;
+            }
+            String resolved = resolveSupersetVersion();
+            if (StringUtils.isNotBlank(resolved)) {
+                supersetVersion = resolved;
+            }
+            return supersetVersion;
+        }
     }
 
     @Override
@@ -257,6 +277,7 @@ public class SupersetSyncApiClient implements SupersetSyncClient {
         HttpEntity<String> entity = body == null ? new HttpEntity<>(headers)
                 : new HttpEntity<>(JsonUtil.toString(body), headers);
         ResponseEntity<Object> response = restTemplate.exchange(url, method, entity, Object.class);
+        captureSupersetVersion(response.getHeaders());
         log.debug("superset sync response, method={}, path={}, status={}", method, path,
                 response.getStatusCode());
         return JsonUtil.objectToMap(response.getBody());
@@ -437,6 +458,68 @@ public class SupersetSyncApiClient implements SupersetSyncClient {
             }
         }
         return cookies.isEmpty() ? null : String.join("; ", cookies);
+    }
+
+    private String resolveSupersetVersion() {
+        String version = extractVersion(safeRequest(HttpMethod.GET, VERSION_API, null));
+        if (StringUtils.isBlank(version)) {
+            version = extractVersion(safeRequest(HttpMethod.GET, HEALTH_API, null));
+        }
+        return StringUtils.trimToNull(version);
+    }
+
+    private Map<String, Object> safeRequest(HttpMethod method, String path, Object body) {
+        try {
+            return request(method, path, body);
+        } catch (Exception ex) {
+            log.debug("superset version request failed, path={}", path, ex);
+            return null;
+        }
+    }
+
+    private String extractVersion(Map<String, Object> response) {
+        if (response == null) {
+            return null;
+        }
+        String version = resolveString(response, "version");
+        if (StringUtils.isBlank(version)) {
+            version = resolveString(response, "superset_version");
+        }
+        if (StringUtils.isBlank(version)) {
+            version = resolveString(response, "version_string");
+        }
+        if (StringUtils.isBlank(version)) {
+            Map<String, Object> result = resolveResult(response);
+            if (result != null && result != response) {
+                version = resolveString(result, "version");
+                if (StringUtils.isBlank(version)) {
+                    version = resolveString(result, "superset_version");
+                }
+                if (StringUtils.isBlank(version)) {
+                    version = resolveString(result, "version_string");
+                }
+            }
+        }
+        return StringUtils.trimToNull(version);
+    }
+
+    private void captureSupersetVersion(HttpHeaders headers) {
+        if (headers == null || StringUtils.isNotBlank(supersetVersion)) {
+            return;
+        }
+        String version = headers.getFirst("X-Superset-Version");
+        if (StringUtils.isBlank(version)) {
+            version = headers.getFirst("Superset-Version");
+        }
+        if (StringUtils.isBlank(version)) {
+            version = headers.getFirst("X-Server-Version");
+        }
+        if (StringUtils.isBlank(version)) {
+            version = headers.getFirst("X-Version");
+        }
+        if (StringUtils.isNotBlank(version)) {
+            supersetVersion = version.trim();
+        }
     }
 
     private Map<String, Object> buildDatasetUpdatePayload(SupersetDatasetInfo datasetInfo) {

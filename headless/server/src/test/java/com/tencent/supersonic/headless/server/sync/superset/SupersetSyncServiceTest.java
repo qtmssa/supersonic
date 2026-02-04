@@ -22,9 +22,13 @@ import com.tencent.supersonic.headless.server.service.ModelService;
 import com.tencent.supersonic.headless.server.service.SchemaService;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.client.HttpClientErrorException;
 import org.testng.Assert;
 import org.testng.annotations.Test;
 
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
@@ -227,6 +231,70 @@ class SupersetSyncServiceTest {
     }
 
     @Test
+    void syncDatabasesIgnoresDuplicateCreateOnSuperset6() {
+        SupersetSyncClient client = Mockito.mock(SupersetSyncClient.class);
+        DatabaseService databaseService = Mockito.mock(DatabaseService.class);
+        ModelService modelService = Mockito.mock(ModelService.class);
+        SchemaService schemaService = Mockito.mock(SchemaService.class);
+        DataSetService dataSetService = Mockito.mock(DataSetService.class);
+        SupersetSyncProperties properties = buildProperties();
+
+        DatabaseResp databaseResp = buildDatabaseResp();
+        when(databaseService.getDatabaseList(User.getDefaultUser()))
+                .thenReturn(Collections.singletonList(databaseResp));
+        when(client.listDatabases()).thenReturn(Collections.emptyList());
+        when(client.getSupersetVersion()).thenReturn("6.0.0");
+        when(client.createDatabase(any())).thenThrow(buildDuplicateException(
+                "{\"message\":{\"database_name\":\"A database with the same name already exists.\"}}"));
+
+        SupersetSyncService service = new SupersetSyncService(client, properties, databaseService,
+                modelService, schemaService, dataSetService);
+        SupersetSyncResult result =
+                service.triggerDatabaseSync(Collections.emptySet(), SupersetSyncTrigger.MANUAL);
+
+        Assert.assertTrue(result.isSuccess());
+        Assert.assertEquals(result.getStats().getSkipped(), 1);
+        Assert.assertEquals(result.getStats().getFailed(), 0);
+    }
+
+    @Test
+    void syncDatasetsIgnoresDuplicateCreateOnSuperset6() {
+        SupersetSyncClient client = Mockito.mock(SupersetSyncClient.class);
+        DatabaseService databaseService = Mockito.mock(DatabaseService.class);
+        ModelService modelService = Mockito.mock(ModelService.class);
+        SchemaService schemaService = Mockito.mock(SchemaService.class);
+        DataSetService dataSetService = Mockito.mock(DataSetService.class);
+        SupersetSyncProperties properties = buildProperties();
+
+        DatabaseResp databaseResp = buildDatabaseResp();
+        when(databaseService.getDatabaseList(User.getDefaultUser()))
+                .thenReturn(Collections.singletonList(databaseResp));
+        when(databaseService.getDatabase(eq(1L), any(User.class))).thenReturn(databaseResp);
+
+        SupersetDatabaseInfo supersetDatabase = new SupersetDatabaseInfo();
+        supersetDatabase.setId(10L);
+        supersetDatabase.setName("supersonic_db_1_demo");
+        when(client.listDatabases()).thenReturn(Collections.singletonList(supersetDatabase));
+        when(client.listDatasets()).thenReturn(Collections.emptyList());
+        when(client.getSupersetVersion()).thenReturn("6.0.0");
+        when(client.createDataset(any())).thenThrow(buildDuplicateException(
+                "{\"message\":{\"table_name\":\"A dataset with the same name already exists.\"}}"));
+        when(schemaService.fetchModelSchemaResps(any())).thenReturn(Collections.emptyList());
+
+        ModelResp modelResp = buildModelResp("select * from new_table");
+        when(modelService.getModelList(any())).thenReturn(Collections.singletonList(modelResp));
+
+        SupersetSyncService service = new SupersetSyncService(client, properties, databaseService,
+                modelService, schemaService, dataSetService);
+        SupersetSyncResult result =
+                service.triggerDatasetSyncByModelIds(Set.of(1L), SupersetSyncTrigger.MANUAL);
+
+        Assert.assertTrue(result.isSuccess());
+        Assert.assertEquals(result.getStats().getSkipped(), 1);
+        Assert.assertEquals(result.getStats().getFailed(), 0);
+    }
+
+    @Test
     void resolveDatasetByDataSetIdUsesIncludeAllModel() {
         SupersetSyncClient client = Mockito.mock(SupersetSyncClient.class);
         DatabaseService databaseService = Mockito.mock(DatabaseService.class);
@@ -327,5 +395,11 @@ class SupersetSyncServiceTest {
         modelResp.setDatabaseId(1L);
         modelResp.setModelDetail(detail);
         return modelResp;
+    }
+
+    private HttpClientErrorException buildDuplicateException(String body) {
+        return HttpClientErrorException.create(HttpStatus.UNPROCESSABLE_ENTITY,
+                "Unprocessable Entity", HttpHeaders.EMPTY, body.getBytes(StandardCharsets.UTF_8),
+                StandardCharsets.UTF_8);
     }
 }

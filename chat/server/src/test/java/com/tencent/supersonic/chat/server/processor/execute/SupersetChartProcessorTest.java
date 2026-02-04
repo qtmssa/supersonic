@@ -29,6 +29,21 @@ public class SupersetChartProcessorTest {
     }
 
     @Test
+    public void testBuildFormDataPrefersBizNameOverDisplayName() {
+        SupersetChartProcessor processor = new SupersetChartProcessor();
+        SupersetPluginConfig config = new SupersetPluginConfig();
+        QueryResult queryResult = new QueryResult();
+        QueryColumn column = new QueryColumn("展示名", "STRING", "biz_name");
+        column.setNameEn("name_en");
+        queryResult.setQueryColumns(Collections.singletonList(column));
+
+        Map<String, Object> formData = processor.buildFormData(config, queryResult, "table");
+
+        Assertions.assertEquals(Collections.singletonList("biz_name"), formData.get("all_columns"));
+        Assertions.assertEquals(Collections.singletonList("biz_name"), formData.get("columns"));
+    }
+
+    @Test
     public void testBuildFormDataNonTableUsesMetricAndGroupby() {
         SupersetChartProcessor processor = new SupersetChartProcessor();
         SupersetPluginConfig config = new SupersetPluginConfig();
