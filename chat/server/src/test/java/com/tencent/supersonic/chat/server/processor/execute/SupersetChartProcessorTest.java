@@ -1,27 +1,31 @@
 package com.tencent.supersonic.chat.server.processor.execute;
 
-import com.tencent.supersonic.chat.api.pojo.response.QueryResult;
 import com.tencent.supersonic.chat.server.plugin.build.superset.SupersetPluginConfig;
-import com.tencent.supersonic.common.pojo.QueryColumn;
+import com.tencent.supersonic.headless.api.pojo.SchemaElement;
+import com.tencent.supersonic.headless.api.pojo.SemanticParseInfo;
+import com.tencent.supersonic.headless.server.sync.superset.SupersetDatasetColumn;
+import com.tencent.supersonic.headless.server.sync.superset.SupersetDatasetInfo;
+import com.tencent.supersonic.headless.server.sync.superset.SupersetDatasetMetric;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
 public class SupersetChartProcessorTest {
 
     @Test
-    public void testBuildFormDataTableDefaults() {
+    public void testBuildFormDataTableUsesDatasetColumns() {
         SupersetChartProcessor processor = new SupersetChartProcessor();
         SupersetPluginConfig config = new SupersetPluginConfig();
-        QueryResult queryResult = new QueryResult();
-        queryResult.setQueryColumns(Arrays.asList(new QueryColumn("id", "INT", "id"),
-                new QueryColumn("name", "STRING", "name")));
+        SupersetDatasetInfo datasetInfo = new SupersetDatasetInfo();
+        datasetInfo.setColumns(Arrays.asList(buildColumn("id", "INT", true, false),
+                buildColumn("name", "STRING", true, false)));
 
-        Map<String, Object> formData = processor.buildFormData(config, queryResult, "table");
+        Map<String, Object> formData = processor.buildFormData(config, null, datasetInfo, "table");
 
         Assertions.assertEquals("raw", formData.get("query_mode"));
         Assertions.assertEquals(Arrays.asList("id", "name"), formData.get("all_columns"));
@@ -29,76 +33,65 @@ public class SupersetChartProcessorTest {
     }
 
     @Test
-    public void testBuildFormDataPrefersBizNameOverDisplayName() {
+    public void testBuildFormDataUsesDatasetMetricsAndDimensions() {
         SupersetChartProcessor processor = new SupersetChartProcessor();
         SupersetPluginConfig config = new SupersetPluginConfig();
-        QueryResult queryResult = new QueryResult();
-        QueryColumn column = new QueryColumn("展示名", "STRING", "biz_name");
-        column.setNameEn("name_en");
-        queryResult.setQueryColumns(Collections.singletonList(column));
+        SemanticParseInfo parseInfo = new SemanticParseInfo();
+        parseInfo.getMetrics().add(SchemaElement.builder().bizName("amount").name("金额").build());
+        parseInfo.getDimensions()
+                .add(SchemaElement.builder().bizName("category").name("品类").build());
+        SupersetDatasetInfo datasetInfo = new SupersetDatasetInfo();
+        datasetInfo.setColumns(Arrays.asList(buildColumn("category", "STRING", true, false),
+                buildColumn("amount", "DECIMAL", false, false)));
+        datasetInfo.setMetrics(Collections.singletonList(buildMetric("amount")));
 
-        Map<String, Object> formData = processor.buildFormData(config, queryResult, "table");
-
-        Assertions.assertEquals(Collections.singletonList("biz_name"), formData.get("all_columns"));
-        Assertions.assertEquals(Collections.singletonList("biz_name"), formData.get("columns"));
-    }
-
-    @Test
-    public void testBuildFormDataNonTableUsesMetricAndGroupby() {
-        SupersetChartProcessor processor = new SupersetChartProcessor();
-        SupersetPluginConfig config = new SupersetPluginConfig();
-        QueryResult queryResult = new QueryResult();
-        queryResult.setQueryColumns(Arrays.asList(new QueryColumn("category", "STRING", "category"),
-                new QueryColumn("amount", "DECIMAL", "amount")));
-
-        Map<String, Object> formData = processor.buildFormData(config, queryResult, "bar");
+        Map<String, Object> formData =
+                processor.buildFormData(config, parseInfo, datasetInfo, "bar");
 
         Assertions.assertEquals(Collections.singletonList("amount"), formData.get("metrics"));
         Assertions.assertEquals(Collections.singletonList("category"), formData.get("groupby"));
+        Assertions.assertEquals("aggregate", formData.get("query_mode"));
     }
 
     @Test
-    public void testBuildFormDataFromResultsWhenColumnsMissing() {
+    public void testBuildFormDataBuildsAdhocMetricWhenDatasetMetricMissing() {
         SupersetChartProcessor processor = new SupersetChartProcessor();
         SupersetPluginConfig config = new SupersetPluginConfig();
-        QueryResult queryResult = new QueryResult();
-        Map<String, Object> row = new java.util.LinkedHashMap<>();
-        row.put("category", "A");
-        row.put("amount", 12);
-        queryResult.setQueryResults(Collections.singletonList(row));
+        SemanticParseInfo parseInfo = new SemanticParseInfo();
+        parseInfo.getDimensions()
+                .add(SchemaElement.builder().bizName("category").name("品类").build());
+        SupersetDatasetInfo datasetInfo = new SupersetDatasetInfo();
+        datasetInfo.setColumns(Arrays.asList(buildColumn("category", "STRING", true, false),
+                buildColumn("amount", "DECIMAL", false, false)));
 
-        Map<String, Object> formData = processor.buildFormData(config, queryResult, "bar");
+        Map<String, Object> formData =
+                processor.buildFormData(config, parseInfo, datasetInfo, "bar");
 
-        Assertions.assertEquals(Collections.singletonList("amount"), formData.get("metrics"));
-        Assertions.assertEquals(Collections.singletonList("category"), formData.get("groupby"));
+        Object metrics = formData.get("metrics");
+        Assertions.assertTrue(metrics instanceof List);
+        List<?> metricList = (List<?>) metrics;
+        Assertions.assertEquals(1, metricList.size());
+        Assertions.assertTrue(metricList.get(0) instanceof Map);
+        Map<?, ?> metric = (Map<?, ?>) metricList.get(0);
+        Assertions.assertEquals("SIMPLE", metric.get("expressionType"));
+        Assertions.assertEquals("SUM", metric.get("aggregate"));
+        Assertions.assertEquals("aggregate", formData.get("query_mode"));
     }
 
-    @Test
-    public void testBuildFormDataTableFromResultsWhenColumnsMissing() {
-        SupersetChartProcessor processor = new SupersetChartProcessor();
-        SupersetPluginConfig config = new SupersetPluginConfig();
-        QueryResult queryResult = new QueryResult();
-        Map<String, Object> row = new java.util.LinkedHashMap<>();
-        row.put("id", 1);
-        row.put("name", "alice");
-        queryResult.setQueryResults(Collections.singletonList(row));
-
-        Map<String, Object> formData = processor.buildFormData(config, queryResult, "table");
-
-        Assertions.assertEquals("raw", formData.get("query_mode"));
-        Assertions.assertEquals(Arrays.asList("id", "name"), formData.get("all_columns"));
-        Assertions.assertEquals(Arrays.asList("id", "name"), formData.get("columns"));
+    private SupersetDatasetColumn buildColumn(String name, String type, boolean groupby,
+            boolean isDttm) {
+        SupersetDatasetColumn column = new SupersetDatasetColumn();
+        column.setColumnName(name);
+        column.setType(type);
+        column.setGroupby(groupby);
+        column.setIsDttm(isDttm);
+        return column;
     }
 
-    @Test
-    public void testBuildFormDataEmptyColumnsReturnsEmpty() {
-        SupersetChartProcessor processor = new SupersetChartProcessor();
-        SupersetPluginConfig config = new SupersetPluginConfig();
-        QueryResult queryResult = new QueryResult();
-        queryResult.setQueryColumns(Collections.emptyList());
-
-        Map<String, Object> formData = processor.buildFormData(config, queryResult, "table");
-
-        Assertions.assertTrue(formData.isEmpty());
+    private SupersetDatasetMetric buildMetric(String name) {
+        SupersetDatasetMetric metric = new SupersetDatasetMetric();
+        metric.setMetricName(name);
+        metric.setExpression("SUM(" + name + ")");
+        return metric;
     }
 }

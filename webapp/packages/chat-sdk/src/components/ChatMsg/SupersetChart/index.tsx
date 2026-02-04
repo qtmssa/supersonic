@@ -270,23 +270,40 @@ const SupersetChart: React.FC<Props> = ({ id, data, triggerResize }) => {
     if (typeof window === 'undefined') {
       return minHeight;
     }
-    const viewportHeight = window.innerHeight || document.documentElement.clientHeight || minHeight;
     const rect = embedContainerRef.current?.getBoundingClientRect();
-    const top = rect ? Math.max(rect.top, 0) : 0;
+    const top = rect ? rect.top : 0;
     const padding = 24;
-    const available = viewportHeight - top - padding;
+    const scrollContainer = embedContainerRef.current?.closest?.(
+      '#messageContainer'
+    ) as HTMLElement | null;
+    if (scrollContainer) {
+      const containerRect = scrollContainer.getBoundingClientRect();
+      const available = containerRect.bottom - top - padding;
+      return Math.max(available, minHeight);
+    }
+    const viewportHeight = window.innerHeight || document.documentElement.clientHeight || minHeight;
+    const available = viewportHeight - Math.max(top, 0) - padding;
     return Math.max(available, minHeight);
   }, [minHeight]);
 
   const getDashboardScrollHeight = useCallback(async () => {
     const instance = embedInstanceRef.current;
-    if (!instance?.getScrollSize) {
-      return null;
+    if (instance?.getScrollSize) {
+      try {
+        const size = await instance.getScrollSize();
+        if (typeof size?.height === 'number' && Number.isFinite(size.height)) {
+          return size.height;
+        }
+      } catch (error) {
+        // ignore and fallback
+      }
     }
     try {
-      const size = await instance.getScrollSize();
-      if (typeof size?.height === 'number' && Number.isFinite(size.height)) {
-        return size.height;
+      const iframe = embedContainerRef.current?.querySelector('iframe');
+      const doc = iframe?.contentDocument || iframe?.contentWindow?.document;
+      const bodyHeight = doc?.body?.scrollHeight;
+      if (typeof bodyHeight === 'number' && Number.isFinite(bodyHeight) && bodyHeight > 0) {
+        return bodyHeight;
       }
     } catch (error) {
       return null;
@@ -366,14 +383,23 @@ const SupersetChart: React.FC<Props> = ({ id, data, triggerResize }) => {
             iframe.style.backgroundColor = currentBackground;
           }
         }
-        requestAnimationFrame(() => {
-          syncHeight();
-        });
-        setTimeout(() => {
-          if (!cancelled) {
+        const scheduleHeightSync = () => {
+          let attempts = 0;
+          const maxAttempts = 10;
+          const interval = 250;
+          const tick = () => {
+            if (cancelled) {
+              return;
+            }
+            attempts += 1;
             syncHeight();
-          }
-        }, 200);
+            if (attempts < maxAttempts) {
+              setTimeout(tick, interval);
+            }
+          };
+          requestAnimationFrame(tick);
+        };
+        scheduleHeightSync();
       })
       .catch(() => {
         message.error('Superset 嵌入失败');

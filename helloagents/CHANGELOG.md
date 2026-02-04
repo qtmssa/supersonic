@@ -10,6 +10,12 @@
   - 方案: [202602040217_superset-viztype-candidates](archive/2026-02/202602040217_superset-viztype-candidates/)
   - 决策: superset-viztype-candidates#D001(前端提供候选切换入口)
 
+### 修复
+- **[chat-server]**: Superset chart form_data 基于 dataset + 语义解析生成，指标缺失时构建 adhoc metric，避免与 dataset 不一致
+  - 方案: [202602041326_superset-form-data-dataset](archive/2026-02/202602041326_superset-form-data-dataset/)
+- **[webapp-chat-sdk]**: 嵌入看板高度改为基于消息容器与 iframe scrollHeight 多次同步，提升自适应稳定性
+  - 方案: [202602040218_superset-embed-chat](archive/2026-02/202602040218_superset-embed-chat/)
+
 ## [0.9.10] - 2026-02-03
 
 ### 新增
@@ -20,3 +26,5 @@
 - **[chat-sdk]**: Superset 嵌入看板自适应尺寸并同步主题背景，避免内部滚动与黑底
   - 方案: [202602040218_superset-embed-chat](archive/2026-02/202602040218_superset-embed-chat/)
   - 决策: superset-embed-chat#D001(容器高度+getScrollSize混合自适应策略)
+- **[chat-sdk]**: 基于消息容器可用区域计算高度并加强嵌入后同步，提升 iframe 自适应稳定性
+  - 方案: [202602040218_superset-embed-chat](archive/2026-02/202602040218_superset-embed-chat/)

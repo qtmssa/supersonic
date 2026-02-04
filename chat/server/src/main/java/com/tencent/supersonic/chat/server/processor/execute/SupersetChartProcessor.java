@@ -17,12 +17,14 @@ import com.tencent.supersonic.chat.server.plugin.build.superset.SupersetPluginCo
 import com.tencent.supersonic.chat.server.plugin.build.superset.SupersetVizTypeSelector;
 import com.tencent.supersonic.chat.server.pojo.ExecuteContext;
 import com.tencent.supersonic.chat.server.service.PluginService;
-import com.tencent.supersonic.common.pojo.QueryColumn;
 import com.tencent.supersonic.common.util.ContextUtils;
 import com.tencent.supersonic.common.util.JsonUtil;
+import com.tencent.supersonic.headless.api.pojo.SchemaElement;
 import com.tencent.supersonic.headless.api.pojo.SemanticParseInfo;
 import com.tencent.supersonic.headless.api.pojo.response.QueryState;
+import com.tencent.supersonic.headless.server.sync.superset.SupersetDatasetColumn;
 import com.tencent.supersonic.headless.server.sync.superset.SupersetDatasetInfo;
+import com.tencent.supersonic.headless.server.sync.superset.SupersetDatasetMetric;
 import com.tencent.supersonic.headless.server.sync.superset.SupersetSyncService;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
@@ -118,7 +120,7 @@ public class SupersetChartProcessor implements ExecuteResultProcessor {
             List<String> dashboardTags = buildDashboardTags(executeContext);
             List<SupersetChartCandidate> chartCandidates =
                     buildChartCandidates(client, vizTypeCandidates, sql, chartName, config,
-                            queryResult, datasetId, databaseId, schema, dashboardTags);
+                            queryResult, datasetInfo, datasetId, databaseId, schema, dashboardTags);
             if (!chartCandidates.isEmpty()) {
                 SupersetChartCandidate primary = chartCandidates.get(0);
                 response.setChartId(primary.getChartId());
@@ -283,8 +285,8 @@ public class SupersetChartProcessor implements ExecuteResultProcessor {
 
     private List<SupersetChartCandidate> buildChartCandidates(SupersetApiClient client,
             List<SupersetVizTypeSelector.VizTypeItem> candidates, String sql, String chartName,
-            SupersetPluginConfig config, QueryResult queryResult, Long datasetId, Long databaseId,
-            String schema, List<String> dashboardTags) {
+            SupersetPluginConfig config, QueryResult queryResult, SupersetDatasetInfo datasetInfo,
+            Long datasetId, Long databaseId, String schema, List<String> dashboardTags) {
         if (client == null || candidates == null || candidates.isEmpty()) {
             return Collections.emptyList();
         }
@@ -298,14 +300,21 @@ public class SupersetChartProcessor implements ExecuteResultProcessor {
             }
             String vizType = candidate.getVizType();
             String candidateChartName = buildCandidateChartName(chartName, vizType, i);
-            Map<String, Object> formData = buildFormData(config, queryResult, vizType);
+            Map<String, Object> formData =
+                    buildFormData(config, executeContext.getParseInfo(), datasetInfo, vizType);
             log.debug(
-                    "superset chart formData prepared, vizType={}, keys={}, size={}, queryColumns={}, queryResults={}",
+                    "superset chart formData prepared, vizType={}, keys={}, size={}, datasetColumns={}, datasetMetrics={}, parseMetrics={}, parseDimensions={}",
                     vizType, formData.keySet(), formData.size(),
-                    queryResult.getQueryColumns() == null ? 0
-                            : queryResult.getQueryColumns().size(),
-                    queryResult.getQueryResults() == null ? 0
-                            : queryResult.getQueryResults().size());
+                    datasetInfo == null || datasetInfo.getColumns() == null ? 0
+                            : datasetInfo.getColumns().size(),
+                    datasetInfo == null || datasetInfo.getMetrics() == null ? 0
+                            : datasetInfo.getMetrics().size(),
+                    executeContext.getParseInfo() == null
+                            || executeContext.getParseInfo().getMetrics() == null ? 0
+                                    : executeContext.getParseInfo().getMetrics().size(),
+                    executeContext.getParseInfo() == null
+                            || executeContext.getParseInfo().getDimensions() == null ? 0
+                                    : executeContext.getParseInfo().getDimensions().size());
             SupersetChartInfo chartInfo = client.createEmbeddedChart(sql, candidateChartName,
                     vizType, formData, resolvedDatasetId, databaseId, schema, dashboardTags);
             if (resolvedDatasetId == null && chartInfo.getDatasetId() != null) {
@@ -333,13 +342,14 @@ public class SupersetChartProcessor implements ExecuteResultProcessor {
     /**
      * 构建 Superset 图表的 formData，优先合并插件自定义配置。
      *
-     * Args: config: Superset 插件配置。 queryResult: 查询结果。 vizType: 图表类型。
+     * Args: config: Superset 插件配置。 parseInfo: 语义解析信息。 datasetInfo: Superset dataset 信息。 vizType:
+     * 图表类型。
      *
      * Returns: 合并后的 formData。
      */
-    Map<String, Object> buildFormData(SupersetPluginConfig config, QueryResult queryResult,
-            String vizType) {
-        Map<String, Object> autoFormData = buildAutoFormData(queryResult, vizType);
+    Map<String, Object> buildFormData(SupersetPluginConfig config, SemanticParseInfo parseInfo,
+            SupersetDatasetInfo datasetInfo, String vizType) {
+        Map<String, Object> autoFormData = buildAutoFormData(parseInfo, datasetInfo, vizType);
         Map<String, Object> customFormData = config == null ? null : config.getFormData();
         if (customFormData == null || customFormData.isEmpty()) {
             return autoFormData;
@@ -353,66 +363,57 @@ public class SupersetChartProcessor implements ExecuteResultProcessor {
     }
 
     /**
-     * 根据查询结果自动生成基础的 Superset formData，避免 Data 配置为空。
+     * 基于 dataset 与解析信息生成 Superset formData，确保由 Superset 计算结果。
      *
-     * Args: queryResult: 查询结果。 vizType: 图表类型。
+     * Args: parseInfo: 语义解析信息。 datasetInfo: Superset dataset 信息。 vizType: 图表类型。
      *
      * Returns: 自动生成的 formData。
      */
-    private Map<String, Object> buildAutoFormData(QueryResult queryResult, String vizType) {
+    private Map<String, Object> buildAutoFormData(SemanticParseInfo parseInfo,
+            SupersetDatasetInfo datasetInfo, String vizType) {
         Map<String, Object> formData = new HashMap<>();
-        List<QueryColumn> queryColumns = queryResult == null ? null : queryResult.getQueryColumns();
-        if (CollectionUtils.isEmpty(queryColumns)) {
-            queryColumns = resolveColumnsFromResults(queryResult);
-            if (!CollectionUtils.isEmpty(queryColumns)) {
-                List<String> fallbackColumns = queryColumns.stream().map(this::resolveColumnName)
-                        .filter(StringUtils::isNotBlank).distinct().collect(Collectors.toList());
-                log.debug("superset formData fallback to queryResults, columns={}",
-                        fallbackColumns);
-            }
-        }
-        if (CollectionUtils.isEmpty(queryColumns)) {
-            return formData;
-        }
-        List<String> columnNames = queryColumns.stream().map(this::resolveColumnName)
-                .filter(StringUtils::isNotBlank).distinct().collect(Collectors.toList());
-        if (CollectionUtils.isEmpty(columnNames)) {
-            return formData;
-        }
+        List<SupersetDatasetColumn> datasetColumns =
+                datasetInfo == null ? Collections.emptyList() : datasetInfo.getColumns();
+        List<String> columnNames = resolveDatasetColumns(datasetColumns);
+        Map<String, SupersetDatasetColumn> columnMap = toColumnMap(datasetColumns);
+        List<String> dimensionColumns = resolveDimensionColumns(parseInfo, columnMap);
+        List<Object> metrics = resolveMetrics(parseInfo, datasetInfo, columnMap);
+        String timeColumn = resolveTimeColumn(parseInfo, datasetInfo, columnMap);
         if (isTableVizType(vizType)) {
-            formData.put("query_mode", "raw");
-            formData.put("all_columns", columnNames);
-            formData.put("columns", columnNames);
+            if (!metrics.isEmpty() || !dimensionColumns.isEmpty()) {
+                formData.put("query_mode", "aggregate");
+                if (!metrics.isEmpty()) {
+                    formData.put("metrics", metrics);
+                }
+                if (!dimensionColumns.isEmpty()) {
+                    formData.put("groupby", dimensionColumns);
+                }
+                if (StringUtils.isNotBlank(timeColumn)) {
+                    formData.put("granularity_sqla", timeColumn);
+                }
+                return formData;
+            }
+            if (!columnNames.isEmpty()) {
+                formData.put("query_mode", "raw");
+                formData.put("all_columns", columnNames);
+                formData.put("columns", columnNames);
+            }
             return formData;
         }
-        String metricColumn = null;
-        String dimensionColumn = null;
-        String timeColumn = null;
-        for (QueryColumn column : queryColumns) {
-            String columnName = resolveColumnName(column);
-            if (StringUtils.isBlank(columnName)) {
-                continue;
-            }
-            if (timeColumn == null && isTimeColumn(column)) {
-                timeColumn = columnName;
-            }
-            if (metricColumn == null && isNumericColumn(column)) {
-                metricColumn = columnName;
-            }
-            if (dimensionColumn == null && !isNumericColumn(column) && !isTimeColumn(column)) {
-                dimensionColumn = columnName;
-            }
+        if (!metrics.isEmpty()) {
+            formData.put("metrics", metrics);
         }
-        if (metricColumn != null) {
-            formData.put("metrics", Collections.singletonList(metricColumn));
+        if (!dimensionColumns.isEmpty()) {
+            formData.put("groupby", dimensionColumns);
         }
-        if (dimensionColumn != null) {
-            formData.put("groupby", Collections.singletonList(dimensionColumn));
-        }
-        if (timeColumn != null) {
+        if (StringUtils.isNotBlank(timeColumn)) {
             formData.put("granularity_sqla", timeColumn);
         }
-        if (formData.isEmpty()) {
+        if (!formData.isEmpty()) {
+            formData.put("query_mode", "aggregate");
+            return formData;
+        }
+        if (!columnNames.isEmpty()) {
             formData.put("query_mode", "raw");
             formData.put("all_columns", columnNames);
             formData.put("columns", columnNames);
@@ -420,61 +421,196 @@ public class SupersetChartProcessor implements ExecuteResultProcessor {
         return formData;
     }
 
-    private List<QueryColumn> resolveColumnsFromResults(QueryResult queryResult) {
-        List<Map<String, Object>> rows = queryResult == null ? null : queryResult.getQueryResults();
-        if (CollectionUtils.isEmpty(rows)) {
+    private List<String> resolveDatasetColumns(List<SupersetDatasetColumn> columns) {
+        if (CollectionUtils.isEmpty(columns)) {
             return Collections.emptyList();
         }
-        Map<String, Object> row = rows.get(0);
-        if (row == null || row.isEmpty()) {
-            return Collections.emptyList();
+        return columns.stream().map(SupersetDatasetColumn::getColumnName)
+                .filter(StringUtils::isNotBlank).distinct().collect(Collectors.toList());
+    }
+
+    private Map<String, SupersetDatasetColumn> toColumnMap(List<SupersetDatasetColumn> columns) {
+        if (CollectionUtils.isEmpty(columns)) {
+            return Collections.emptyMap();
         }
-        List<QueryColumn> columns = new ArrayList<>();
-        for (Map.Entry<String, Object> entry : row.entrySet()) {
-            String name = entry.getKey();
-            if (StringUtils.isBlank(name)) {
+        Map<String, SupersetDatasetColumn> map = new HashMap<>();
+        for (SupersetDatasetColumn column : columns) {
+            if (column == null || StringUtils.isBlank(column.getColumnName())) {
                 continue;
             }
-            columns.add(new QueryColumn(name, resolveValueType(entry.getValue()), name));
+            map.put(normalizeName(column.getColumnName()), column);
         }
-        return columns;
+        return map;
     }
 
-    private String resolveValueType(Object value) {
-        if (value == null) {
-            return "STRING";
+    private Map<String, SupersetDatasetMetric> toMetricMap(List<SupersetDatasetMetric> metrics) {
+        if (CollectionUtils.isEmpty(metrics)) {
+            return Collections.emptyMap();
         }
-        if (value instanceof Number) {
-            return "NUMBER";
+        Map<String, SupersetDatasetMetric> map = new HashMap<>();
+        for (SupersetDatasetMetric metric : metrics) {
+            if (metric == null || StringUtils.isBlank(metric.getMetricName())) {
+                continue;
+            }
+            map.put(normalizeName(metric.getMetricName()), metric);
         }
-        if (value instanceof Boolean) {
-            return "BOOLEAN";
-        }
-        if (value instanceof java.time.temporal.TemporalAccessor
-                || value instanceof java.util.Date) {
-            return "TIMESTAMP";
-        }
-        return "STRING";
+        return map;
     }
 
-    /**
-     * 解析列名用于 Superset formData。
-     *
-     * Args: column: 查询列信息。
-     *
-     * Returns: 列名字符串。
-     */
-    private String resolveColumnName(QueryColumn column) {
-        if (column == null) {
+    private List<String> resolveDimensionColumns(SemanticParseInfo parseInfo,
+            Map<String, SupersetDatasetColumn> columnMap) {
+        if (parseInfo != null && !CollectionUtils.isEmpty(parseInfo.getDimensions())) {
+            List<String> dimensions = new ArrayList<>();
+            for (SchemaElement element : parseInfo.getDimensions()) {
+                String name = resolveSchemaElementName(element);
+                if (StringUtils.isBlank(name)) {
+                    continue;
+                }
+                if (!columnMap.isEmpty() && !columnMap.containsKey(normalizeName(name))) {
+                    continue;
+                }
+                dimensions.add(name);
+            }
+            if (!dimensions.isEmpty()) {
+                return dimensions.stream().distinct().collect(Collectors.toList());
+            }
+        }
+        if (columnMap.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<String> dimensions = new ArrayList<>();
+        for (SupersetDatasetColumn column : columnMap.values()) {
+            if (column != null && Boolean.TRUE.equals(column.getGroupby())
+                    && StringUtils.isNotBlank(column.getColumnName())) {
+                dimensions.add(column.getColumnName());
+            }
+        }
+        return dimensions.stream().distinct().collect(Collectors.toList());
+    }
+
+    private List<Object> resolveMetrics(SemanticParseInfo parseInfo,
+            SupersetDatasetInfo datasetInfo, Map<String, SupersetDatasetColumn> columnMap) {
+        List<Object> metrics = new ArrayList<>();
+        List<SupersetDatasetMetric> datasetMetrics =
+                datasetInfo == null ? Collections.emptyList() : datasetInfo.getMetrics();
+        Map<String, SupersetDatasetMetric> metricMap = toMetricMap(datasetMetrics);
+        boolean hasDatasetMetrics = !metricMap.isEmpty();
+        if (parseInfo != null && !CollectionUtils.isEmpty(parseInfo.getMetrics())) {
+            for (SchemaElement element : parseInfo.getMetrics()) {
+                String name = resolveSchemaElementName(element);
+                if (StringUtils.isBlank(name)) {
+                    continue;
+                }
+                if (hasDatasetMetrics) {
+                    SupersetDatasetMetric metric = metricMap.get(normalizeName(name));
+                    if (metric != null) {
+                        metrics.add(metric.getMetricName());
+                    }
+                    continue;
+                }
+                SupersetDatasetColumn column = columnMap.get(normalizeName(name));
+                if (column != null) {
+                    metrics.add(buildAdhocMetric(column, resolveAggregate(element)));
+                }
+            }
+        }
+        if (!metrics.isEmpty()) {
+            return metrics;
+        }
+        if (hasDatasetMetrics) {
+            metrics.add(datasetMetrics.get(0).getMetricName());
+            return metrics;
+        }
+        SupersetDatasetColumn numeric = resolveNumericColumn(columnMap);
+        if (numeric != null) {
+            metrics.add(buildAdhocMetric(numeric, "SUM"));
+        }
+        return metrics;
+    }
+
+    private SupersetDatasetColumn resolveNumericColumn(
+            Map<String, SupersetDatasetColumn> columnMap) {
+        if (columnMap.isEmpty()) {
             return null;
         }
-        if (StringUtils.isNotBlank(column.getBizName())) {
-            return column.getBizName();
+        for (SupersetDatasetColumn column : columnMap.values()) {
+            if (column == null || StringUtils.isBlank(column.getColumnName())) {
+                continue;
+            }
+            if (isNumericType(column.getType())) {
+                return column;
+            }
         }
-        if (StringUtils.isNotBlank(column.getNameEn())) {
-            return column.getNameEn();
+        return null;
+    }
+
+    private String resolveTimeColumn(SemanticParseInfo parseInfo, SupersetDatasetInfo datasetInfo,
+            Map<String, SupersetDatasetColumn> columnMap) {
+        if (datasetInfo != null && StringUtils.isNotBlank(datasetInfo.getMainDttmCol())) {
+            return datasetInfo.getMainDttmCol();
         }
-        return column.getName();
+        if (!columnMap.isEmpty()) {
+            for (SupersetDatasetColumn column : columnMap.values()) {
+                if (column != null && Boolean.TRUE.equals(column.getIsDttm())
+                        && StringUtils.isNotBlank(column.getColumnName())) {
+                    return column.getColumnName();
+                }
+            }
+        }
+        if (parseInfo != null && !CollectionUtils.isEmpty(parseInfo.getDimensions())) {
+            for (SchemaElement element : parseInfo.getDimensions()) {
+                String name = resolveSchemaElementName(element);
+                if (StringUtils.isBlank(name)) {
+                    continue;
+                }
+                SupersetDatasetColumn column = columnMap.get(normalizeName(name));
+                if (column != null) {
+                    return column.getColumnName();
+                }
+            }
+        }
+        return null;
+    }
+
+    private Map<String, Object> buildAdhocMetric(SupersetDatasetColumn column, String aggregate) {
+        Map<String, Object> metric = new HashMap<>();
+        metric.put("expressionType", "SIMPLE");
+        if (StringUtils.isNotBlank(aggregate)) {
+            metric.put("aggregate", aggregate);
+        }
+        Map<String, Object> columnRef = new HashMap<>();
+        columnRef.put("column_name", column.getColumnName());
+        if (StringUtils.isNotBlank(column.getType())) {
+            columnRef.put("type", column.getType());
+        }
+        metric.put("column", columnRef);
+        metric.put("hasCustomLabel", true);
+        String label =
+                StringUtils.defaultIfBlank(aggregate, "SUM") + "(" + column.getColumnName() + ")";
+        metric.put("label", label);
+        metric.put("optionName", "metric_" + normalizeName(column.getColumnName()));
+        return metric;
+    }
+
+    private String resolveSchemaElementName(SchemaElement element) {
+        if (element == null) {
+            return null;
+        }
+        if (StringUtils.isNotBlank(element.getBizName())) {
+            return element.getBizName();
+        }
+        return element.getName();
+    }
+
+    private String resolveAggregate(SchemaElement element) {
+        if (element == null || StringUtils.isBlank(element.getDefaultAgg())) {
+            return "SUM";
+        }
+        return element.getDefaultAgg().toUpperCase();
+    }
+
+    private String normalizeName(String name) {
+        return StringUtils.lowerCase(StringUtils.trimToEmpty(name));
     }
 
     /**
@@ -484,29 +620,13 @@ public class SupersetChartProcessor implements ExecuteResultProcessor {
      *
      * Returns: 是否为数值列。
      */
-    private boolean isNumericColumn(QueryColumn column) {
-        if (column == null) {
-            return false;
-        }
-        String type = StringUtils.defaultString(column.getType()).toUpperCase();
-        return type.contains("INT") || type.contains("LONG") || type.contains("DOUBLE")
-                || type.contains("FLOAT") || type.contains("DECIMAL") || type.contains("NUMBER")
-                || type.contains("NUMERIC") || type.contains("BIGINT") || type.contains("SHORT");
-    }
-
-    /**
-     * 判断列是否为时间类型。
-     *
-     * Args: column: 查询列信息。
-     *
-     * Returns: 是否为时间列。
-     */
-    private boolean isTimeColumn(QueryColumn column) {
-        if (column == null) {
-            return false;
-        }
-        String type = StringUtils.defaultString(column.getType()).toUpperCase();
-        return type.contains("DATE") || type.contains("TIME") || type.contains("TIMESTAMP");
+    private boolean isNumericType(String type) {
+        String normalized = StringUtils.defaultString(type).toUpperCase();
+        return normalized.contains("INT") || normalized.contains("LONG")
+                || normalized.contains("DOUBLE") || normalized.contains("FLOAT")
+                || normalized.contains("DECIMAL") || normalized.contains("NUMBER")
+                || normalized.contains("NUMERIC") || normalized.contains("BIGINT")
+                || normalized.contains("SHORT");
     }
 
     /**
