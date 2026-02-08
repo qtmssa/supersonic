@@ -5,7 +5,6 @@ import com.tencent.supersonic.chat.api.pojo.response.QueryResult;
 import com.tencent.supersonic.chat.server.pojo.ChatContext;
 import com.tencent.supersonic.chat.server.pojo.ChatMemory;
 import com.tencent.supersonic.chat.server.pojo.ExecuteContext;
-import com.tencent.supersonic.chat.server.plugin.build.superset.SupersetPluginResolver;
 import com.tencent.supersonic.chat.server.service.ChatContextService;
 import com.tencent.supersonic.chat.server.service.MemoryService;
 import com.tencent.supersonic.chat.server.util.ResultFormatter;
@@ -81,15 +80,6 @@ public class SqlExecutor implements ChatQueryExecutor {
             return null;
         }
 
-        if (shouldSkipSqlExecution(executeContext, parseInfo)) {
-            QueryResult queryResult =
-                    buildSupersetPlaceholderResult(executeContext, parseInfo, semanticLayer,
-                            chatCtx, chatContextService);
-            if (queryResult != null) {
-                return queryResult;
-            }
-        }
-
         QuerySqlReq sqlReq =
                 QuerySqlReq.builder().sql(parseInfo.getSqlInfo().getCorrectedS2SQL()).build();
         sqlReq.setSqlInfo(parseInfo.getSqlInfo());
@@ -129,13 +119,7 @@ public class SqlExecutor implements ChatQueryExecutor {
      */
     private boolean shouldSkipSqlExecution(ExecuteContext executeContext,
             SemanticParseInfo parseInfo) {
-        if (executeContext == null || parseInfo == null) {
-            return false;
-        }
-        if (!LLMSqlQuery.QUERY_MODE.equalsIgnoreCase(parseInfo.getQueryMode())) {
-            return false;
-        }
-        return SupersetPluginResolver.isSupersetEnabled(executeContext);
+        return false;
     }
 
     /**
