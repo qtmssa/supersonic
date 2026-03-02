@@ -198,7 +198,7 @@ export function setToken(token: string) {
 }
 
 export function getToken() {
-  return localStorage.getItem('SUPERSONIC_TOKEN');
+  return localStorage.getItem('SUPERSONIC_TOKEN') || localStorage.getItem('TME_TOKEN');
 }
 
 export const updateMessageContainerScroll = (nodeId?: string) => {

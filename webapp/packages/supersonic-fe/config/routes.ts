@@ -49,6 +49,12 @@ const ROUTES = [
     envEnableList: [ENV_KEY.CHAT],
   },
   {
+    path: '/message',
+    name: 'message',
+    component: './MessageManage',
+    envEnableList: [ENV_KEY.CHAT],
+  },
+  {
     path: '/model/metric/edit/:metricId',
     name: 'metricEdit',
     hideInMenu: true,
@@ -198,6 +204,13 @@ const ROUTES = [
     name: 'database',
     component: './SemanticModel/components/Database/DatabaseTable',
     envEnableList: [ENV_KEY.SEMANTIC],
+  },
+  {
+    path: '/supersetDataset',
+    name: 'supersetDataset',
+    component: './SupersetDataset',
+    envEnableList: [ENV_KEY.SEMANTIC],
+    access: ROUTE_AUTH_CODES.SYSTEM_ADMIN,
   },
   {
     path: '/llm',

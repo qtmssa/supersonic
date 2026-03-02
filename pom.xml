@@ -35,7 +35,7 @@
         <jsqlparser.version>4.7</jsqlparser.version>
         <pagehelper.version>6.1.0</pagehelper.version>
         <pagehelper.spring.version>2.1.0</pagehelper.spring.version>
-        <mybatis.version>3.5.3</mybatis.version>
+        <mybatis.version>3.5.6</mybatis.version>
         <guava.version>32.0.0-jre</guava.version>
         <hanlp.version>portable-1.8.3</hanlp.version>
         <hadoop.version>2.7.2</hadoop.version>
@@ -46,12 +46,12 @@
         <transmittable.thread.local.version>2.12.1</transmittable.thread.local.version>
         <jjwt.version>0.12.3</jjwt.version>
         <alibaba.druid.version>1.2.24</alibaba.druid.version>
-        <mysql.connector.java.version>5.1.46</mysql.connector.java.version>
+        <mysql.connector.java.version>8.1.2</mysql.connector.java.version>
         <kyuubi.version>1.10.1</kyuubi.version>
         <presto.version>0.291</presto.version>
         <trino.version>471</trino.version>
         <mybatis.plus.version>3.5.7</mybatis.plus.version>
-        <httpclient5.version>5.4.1</httpclient5.version>
+        <httpclient5.version>5.4.3</httpclient5.version>
 <!--        <httpcore.version>4.4.16</httpcore.version>-->
         <httpcore5.version>5.3.1</httpcore5.version>
         <clickhouse.jdbc.version>0.4.6</clickhouse.jdbc.version>

@@ -14,6 +14,7 @@ export default {
   'menu.tag': '标签市场',
   'menu.tag.tagDetail': '标签详情页',
   'menu.database': '数据库管理',
+  'menu.supersetDataset': 'Superset数据集管理',
   'menu.llm': '大模型管理',
   'menu.chatSetting': '问答设置',
   'menu.plugin': '插件管理',
@@ -21,4 +22,5 @@ export default {
   'menu.system': '系统设置',
   'menu.chat': '问答对话',
   'menu.agent': '助理管理',
+  'menu.message': '消息管理',
 };

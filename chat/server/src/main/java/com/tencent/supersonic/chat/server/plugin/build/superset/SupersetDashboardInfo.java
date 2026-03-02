@@ -8,4 +8,6 @@ public class SupersetDashboardInfo {
     private Long id;
 
     private String title;
+
+    private String embeddedId;
 }
