@@ -40,3 +40,5 @@ benchmark/res/
 bin/
 
 *.bak.*
+
+.venv/
