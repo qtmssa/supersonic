@@ -28,6 +28,10 @@ helloagents/CHANGELOG.md
 .helloagents/
 output/
 scripts/
+!webapp/scripts/
+webapp/scripts/*
+!webapp/scripts/build-fe-prod.cjs
+!webapp/scripts/ensure-prism-core.cjs
 **/.tmp*
 
 *.class

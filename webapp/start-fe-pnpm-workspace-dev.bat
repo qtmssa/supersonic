@@ -1,23 +1,20 @@
 @echo off
 
 for /f "delims=" %%i in ('node -v') do set "node_version=%%i"
-node -e "try { process.binding('http_parser'); } catch (error) { console.error('Current Node.js ' + process.version + ' is incompatible with the Supersonic frontend toolchain because webpack-dev-server depends on the removed internal module http_parser. Please use Node.js 18 or 20 LTS.'); process.exit(1); }"
-if errorlevel 1 (
+for /f "tokens=2 delims=v." %%i in ("%node_version%") do set "major_version=%%i"
+if not "%major_version%"=="18" if not "%major_version%"=="20" (
+  echo Current Node.js %node_version% is incompatible with the Supersonic frontend toolchain. Please use Node.js 18 or 20 LTS.
   exit /b 1
 )
-
-for /f "tokens=2 delims=v." %%i in ("%node_version%") do set "major_version=%%i"
-
-if %major_version% GEQ 17 (
-  set "NODE_OPTIONS=--openssl-legacy-provider"
-  echo Node.js version is greater than or equal to 17. NODE_OPTIONS has been set to --openssl-legacy-provider.
-)
+set "NODE_OPTIONS=--openssl-legacy-provider"
+echo Using Node.js %node_version%. NODE_OPTIONS has been set to --openssl-legacy-provider.
 where /q pnpm
 if errorlevel 1 (
   echo pnpm is not installed. Installing...
   npm install -g pnpm
   if errorlevel 1 (
     echo Failed to install pnpm. Please check if npm is installed and the network connection is working.
+    exit /b 1
   ) else (
     echo pnpm installed successfully.
   )
@@ -25,19 +22,21 @@ if errorlevel 1 (
   echo pnpm is already installed.
 )
 
-rmdir /s /q ".\packages\supersonic-fe\src\.umi"
-rmdir /s /q ".\packages\supersonic-fe\src\.umi-production"
+rmdir /s /q ".\packages\supersonic-fe\src\.umi" 2>nul
+rmdir /s /q ".\packages\supersonic-fe\src\.umi-production" 2>nul
+
+cmd /c "pnpm i --config.confirmModulesPurge=false"
+if errorlevel 1 exit /b 1
+node .\scripts\ensure-prism-core.cjs
+if errorlevel 1 exit /b 1
 
 cd ./packages/chat-sdk
 
-call pnpm i
-
-call pnpm run build
+cmd /c "pnpm run build"
+if errorlevel 1 exit /b 1
 
 call npm run watch:bg
 
 cd ../supersonic-fe
-
-call pnpm i
 
 call npm run start
