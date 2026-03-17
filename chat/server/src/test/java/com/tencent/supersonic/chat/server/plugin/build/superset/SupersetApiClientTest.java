@@ -331,14 +331,13 @@ public class SupersetApiClientTest {
         Assertions.assertTrue(loginBody.contains("password=secret"));
         Assertions.assertTrue(loginBody.contains("csrf_token=login-csrf"));
 
-        RecordingRequest dashboardCreate = factory.getLastRequest(HttpMethod.POST,
-                "http://localhost:8088/api/v1/dashboard/");
+        RecordingRequest dashboardCreate =
+                factory.getLastRequest(HttpMethod.POST, "http://localhost:8088/api/v1/dashboard/");
         Assertions.assertNotNull(dashboardCreate);
         Assertions.assertNull(dashboardCreate.getHeaders().getFirst(HttpHeaders.AUTHORIZATION));
         Assertions.assertEquals("session=browser-session",
                 dashboardCreate.getHeaders().getFirst(HttpHeaders.COOKIE));
-        Assertions.assertEquals("page-csrf",
-                dashboardCreate.getHeaders().getFirst("X-CSRFToken"));
+        Assertions.assertEquals("page-csrf", dashboardCreate.getHeaders().getFirst("X-CSRFToken"));
         Assertions.assertEquals("http://localhost:8088/superset/welcome/",
                 dashboardCreate.getHeaders().getFirst(HttpHeaders.REFERER));
 
@@ -375,17 +374,15 @@ public class SupersetApiClientTest {
                 new ResponseSpec(HttpStatus.OK,
                         "<input name=\"csrf_token\" value=\"login-csrf\" />".getBytes(),
                         htmlHeaders("session=login-session; Path=/")));
-        factory.addSequence(HttpMethod.POST, encodedLoginUrl,
-                new ResponseSpec(HttpStatus.FOUND, "".getBytes(),
-                        htmlHeaders("session=browser-session; Path=/")));
-        factory.addSequence(HttpMethod.POST, decodedLoginUrl,
-                new ResponseSpec(HttpStatus.FOUND, "".getBytes(),
-                        htmlHeaders("session=browser-session; Path=/")));
+        factory.addSequence(HttpMethod.POST, encodedLoginUrl, new ResponseSpec(HttpStatus.FOUND,
+                "".getBytes(), htmlHeaders("session=browser-session; Path=/")));
+        factory.addSequence(HttpMethod.POST, decodedLoginUrl, new ResponseSpec(HttpStatus.FOUND,
+                "".getBytes(), htmlHeaders("session=browser-session; Path=/")));
         factory.add(HttpMethod.GET, "http://localhost:8088/superset/welcome/", HttpStatus.OK,
                 "<input name=\"csrf_token\" value=\"page-csrf\" />", htmlHeaders(null));
 
-        factory.add(HttpMethod.POST, "http://localhost:8088/api/v1/security/login",
-                HttpStatus.OK, "{\"access_token\":\"access-token\",\"refresh_token\":\"refresh-token\"}");
+        factory.add(HttpMethod.POST, "http://localhost:8088/api/v1/security/login", HttpStatus.OK,
+                "{\"access_token\":\"access-token\",\"refresh_token\":\"refresh-token\"}");
         HttpHeaders csrfHeaders = new HttpHeaders();
         csrfHeaders.setContentType(MediaType.APPLICATION_JSON);
         csrfHeaders.add(HttpHeaders.SET_COOKIE, "session=jwt-cookie; Path=/");
@@ -416,14 +413,13 @@ public class SupersetApiClientTest {
                 "http://localhost:8088/api/v1/security/login"));
         Assertions.assertNotNull(factory.getLastRequest(HttpMethod.GET,
                 "http://localhost:8088/api/v1/security/csrf_token/"));
-        RecordingRequest dashboardCreate = factory.getLastRequest(HttpMethod.POST,
-                "http://localhost:8088/api/v1/dashboard/");
+        RecordingRequest dashboardCreate =
+                factory.getLastRequest(HttpMethod.POST, "http://localhost:8088/api/v1/dashboard/");
         Assertions.assertNotNull(dashboardCreate);
         Assertions.assertNull(dashboardCreate.getHeaders().getFirst(HttpHeaders.AUTHORIZATION));
         Assertions.assertEquals("session=browser-session",
                 dashboardCreate.getHeaders().getFirst(HttpHeaders.COOKIE));
-        Assertions.assertEquals("page-csrf",
-                dashboardCreate.getHeaders().getFirst("X-CSRFToken"));
+        Assertions.assertEquals("page-csrf", dashboardCreate.getHeaders().getFirst("X-CSRFToken"));
         Assertions.assertEquals("http://localhost:8088/superset/welcome/",
                 dashboardCreate.getHeaders().getFirst(HttpHeaders.REFERER));
     }
@@ -436,8 +432,8 @@ public class SupersetApiClientTest {
         config.setJwtPassword("secret");
         SupersetApiClient client = new SupersetApiClient(config);
         RoutingFactory factory = new RoutingFactory();
-        factory.add(HttpMethod.POST, "http://localhost:8088/api/v1/security/login",
-                HttpStatus.OK, "{\"access_token\":\"access-token\",\"refresh_token\":\"refresh-token\"}");
+        factory.add(HttpMethod.POST, "http://localhost:8088/api/v1/security/login", HttpStatus.OK,
+                "{\"access_token\":\"access-token\",\"refresh_token\":\"refresh-token\"}");
 
         HttpHeaders csrfHeaders = new HttpHeaders();
         csrfHeaders.setContentType(MediaType.APPLICATION_JSON);
@@ -584,14 +580,12 @@ public class SupersetApiClientTest {
             RecordingRequest colorRequest = factory.getLastRequest(HttpMethod.PUT,
                     "http://localhost:8088/api/v1/dashboard/99/colors?mark_updated=false");
             Assertions.assertNull(colorRequest);
-            Assertions.assertTrue(appender.list.stream().anyMatch(event ->
-                    event.getLevel() == Level.DEBUG
-                            && event.getFormattedMessage()
-                                    .contains("superset dashboard color init skipped")));
-            Assertions.assertFalse(appender.list.stream().anyMatch(event ->
-                    event.getLevel() == Level.WARN
-                            && event.getFormattedMessage()
-                                    .contains("superset dashboard color init failed")));
+            Assertions.assertTrue(appender.list.stream().anyMatch(
+                    event -> event.getLevel() == Level.DEBUG && event.getFormattedMessage()
+                            .contains("superset dashboard color init skipped")));
+            Assertions.assertFalse(appender.list.stream()
+                    .anyMatch(event -> event.getLevel() == Level.WARN && event.getFormattedMessage()
+                            .contains("superset dashboard color init failed")));
         } finally {
             logger.detachAppender(appender);
             logger.setLevel(previousLevel);
@@ -653,6 +647,32 @@ public class SupersetApiClientTest {
         Assertions.assertTrue(columns.contains("city"));
         Assertions.assertEquals(Arrays.asList("city"), query.get("series_columns"));
         Assertions.assertEquals(Boolean.TRUE, query.get("is_timeseries"));
+        Assertions.assertFalse(query.containsKey("orderby"));
+        Assertions.assertFalse(query.containsKey("groupby"));
+        Assertions.assertFalse(query.containsKey("order_desc"));
+    }
+
+    @Test
+    public void testBuildQueryContextTimeseriesKeepsExplicitOrderingOnly() {
+        SupersetPluginConfig config = new SupersetPluginConfig();
+        SupersetApiClient client = new SupersetApiClient(config);
+        Map<String, Object> formData = new HashMap<>();
+        formData.put("metrics", Arrays.asList("count"));
+        formData.put("groupby", Arrays.asList("city"));
+        formData.put("granularity_sqla", "imp_date");
+        formData.put("orderby", Collections.singletonList(Arrays.asList("count", false)));
+        formData.put("order_desc", true);
+        formData.put("series_limit", 3L);
+
+        Map<String, Object> context =
+                client.buildQueryContext(formData, 12L, "echarts_timeseries_line");
+        List<?> queries = (List<?>) context.get("queries");
+        Map<?, ?> query = (Map<?, ?>) queries.get(0);
+
+        Assertions.assertEquals(Collections.singletonList(Arrays.asList("count", false)),
+                query.get("orderby"));
+        Assertions.assertEquals(Boolean.TRUE, query.get("order_desc"));
+        Assertions.assertEquals(3, ((Number) query.get("series_limit")).intValue());
     }
 
     @Test
@@ -803,7 +823,7 @@ public class SupersetApiClientTest {
         Assertions.assertEquals(Boolean.TRUE, query.get("order_desc"));
         Assertions.assertEquals("2026-02-14 : 2026-03-15", query.get("time_range"));
         Map<?, ?> extras = (Map<?, ?>) query.get("extras");
-        Assertions.assertEquals("2026-02-14 : 2026-03-15", extras.get("time_range"));
+        Assertions.assertFalse(extras.containsKey("time_range"));
         List<?> filters = (List<?>) query.get("filters");
         Assertions.assertEquals(1, filters.size());
         Map<?, ?> filter = (Map<?, ?>) filters.get(0);

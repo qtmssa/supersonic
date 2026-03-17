@@ -22,6 +22,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.regex.Matcher;
@@ -53,16 +54,14 @@ public class SupersetApiClient {
     private static final String EMBEDDED_UI_CONFIG = "3";
     private static final String TAG_API = "/api/v1/tag/";
     private static final String LOGIN_PAGE = "/login/";
-    private static final String LOGIN_PAGE_NEXT =
-            "/login/?next=%2Fsuperset%2Fwelcome%2F";
+    private static final String LOGIN_PAGE_NEXT = "/login/?next=%2Fsuperset%2Fwelcome%2F";
     private static final String WELCOME_PAGE = "/superset/welcome/";
     private static final String LOGIN_API = "/api/v1/security/login";
     private static final String REFRESH_API = "/api/v1/security/refresh";
     private static final String CSRF_API = "/api/v1/security/csrf_token/";
     private static final int TAG_OBJECT_DASHBOARD = 3;
     private static final Pattern HTML_CSRF_PATTERN = Pattern.compile(
-            "name=[\"']csrf_token[\"'][^>]*value=[\"']([^\"']+)[\"']",
-            Pattern.CASE_INSENSITIVE);
+            "name=[\"']csrf_token[\"'][^>]*value=[\"']([^\"']+)[\"']", Pattern.CASE_INSENSITIVE);
 
     private static volatile SupersetVizTypeSelector.VizTypeCatalog VIZTYPE_CATALOG;
 
@@ -663,7 +662,7 @@ public class SupersetApiClient {
         resolvedUrlParams.put("show_filters", "false");
         resolvedUrlParams.put("expand_filters", "false");
         merged.put("url_params", resolvedUrlParams);
-        normalizeAccessFields(merged);
+        normalizeAccessFields(merged, vizType);
         sanitizeMetricOptionNames(merged);
         Map<String, Object> payload = new HashMap<>();
         payload.put("params", JsonUtil.toString(merged));
@@ -710,7 +709,7 @@ public class SupersetApiClient {
             queries.add(new HashMap<>());
         }
         for (Map<String, Object> query : queries) {
-            syncQueryObject(query, formData);
+            syncQueryObject(query, formData, vizType);
         }
         List<Map<String, Object>> templated =
                 SupersetQueryContextTemplates.apply(vizType, formData, queries);
@@ -722,16 +721,18 @@ public class SupersetApiClient {
         return context;
     }
 
-    private void syncQueryObject(Map<String, Object> query, Map<String, Object> formData) {
+    private void syncQueryObject(Map<String, Object> query, Map<String, Object> formData,
+            String vizType) {
         if (query == null || formData == null) {
             return;
         }
+        boolean guestSafeTimeseries = isGuestSafeTimeseries(vizType);
         Object queryMode = formData.get("query_mode");
         String mode = queryMode == null ? "aggregate" : String.valueOf(queryMode);
         List<Object> metrics = resolveMetricsForAccess(formData);
         List<Object> groupby = toList(formData.get("groupby"));
         List<Object> columns = toList(formData.get("columns"));
-        if (!groupby.isEmpty()) {
+        if (!guestSafeTimeseries && !groupby.isEmpty()) {
             columns = mergeList(columns, groupby);
         }
         if ("raw".equalsIgnoreCase(mode)) {
@@ -744,10 +745,10 @@ public class SupersetApiClient {
             }
         } else {
             query.put("metrics", metrics);
-            if (!groupby.isEmpty()) {
+            if (!guestSafeTimeseries && !groupby.isEmpty()) {
                 query.put("groupby", groupby);
             }
-            if (!columns.isEmpty()) {
+            if (!guestSafeTimeseries && !columns.isEmpty()) {
                 query.put("columns", columns);
             }
             Object granularity = formData.get("granularity_sqla");
@@ -756,7 +757,7 @@ public class SupersetApiClient {
             }
         }
         Object orderby = formData.get("orderby");
-        if (orderby == null) {
+        if (!guestSafeTimeseries && orderby == null) {
             orderby = resolveDefaultOrderby(metrics);
         }
         if (orderby != null) {
@@ -779,9 +780,13 @@ public class SupersetApiClient {
         query.putIfAbsent("applied_time_extras", Collections.emptyMap());
         query.putIfAbsent("annotation_layers", Collections.emptyList());
         query.putIfAbsent("row_limit", formData.getOrDefault("row_limit", 10000));
-        query.putIfAbsent("series_limit", formData.getOrDefault("series_limit", 0));
+        if (formData.containsKey("series_limit")) {
+            query.putIfAbsent("series_limit", formData.get("series_limit"));
+        }
         query.putIfAbsent("group_others_when_limit_reached", false);
-        query.putIfAbsent("order_desc", formData.getOrDefault("order_desc", true));
+        if (!guestSafeTimeseries || formData.containsKey("order_desc")) {
+            query.putIfAbsent("order_desc", formData.getOrDefault("order_desc", true));
+        }
         query.putIfAbsent("url_params",
                 formData.getOrDefault("url_params", Collections.emptyMap()));
         query.putIfAbsent("custom_params", Collections.emptyMap());
@@ -800,9 +805,6 @@ public class SupersetApiClient {
             return;
         }
         query.put("time_range", timeRange);
-        if (extras != null) {
-            extras.put("time_range", timeRange);
-        }
     }
 
     private String resolveTimeRange(Map<String, Object> formData) {
@@ -910,12 +912,15 @@ public class SupersetApiClient {
         return left != null ? left : right;
     }
 
-    private void normalizeAccessFields(Map<String, Object> formData) {
+    private void normalizeAccessFields(Map<String, Object> formData, String vizType) {
         if (formData == null) {
             return;
         }
         List<Object> metrics = resolveMetricsForAccess(formData);
         formData.put("metrics", metrics);
+        if (isGuestSafeTimeseries(vizType)) {
+            return;
+        }
         List<Object> groupby = toList(formData.get("groupby"));
         List<Object> columns = toList(formData.get("columns"));
         if (!groupby.isEmpty()) {
@@ -928,6 +933,20 @@ public class SupersetApiClient {
                 formData.put("orderby", orderby);
             }
         }
+    }
+
+    private boolean isGuestSafeTimeseries(String vizType) {
+        if (StringUtils.isBlank(vizType)) {
+            return false;
+        }
+        String normalized = vizType.trim().toLowerCase(Locale.ROOT);
+        return "echarts_timeseries".equals(normalized) || "echarts_area".equals(normalized)
+                || "echarts_timeseries_bar".equals(normalized)
+                || "echarts_timeseries_line".equals(normalized)
+                || "echarts_timeseries_scatter".equals(normalized)
+                || "echarts_timeseries_smooth".equals(normalized)
+                || "echarts_timeseries_step".equals(normalized)
+                || "mixed_timeseries".equals(normalized);
     }
 
     private void sanitizeMetricOptionNames(Map<String, Object> formData) {
@@ -1886,9 +1905,8 @@ public class SupersetApiClient {
             return;
         }
         String loginPageUrl = baseUrl + LOGIN_PAGE_NEXT;
-        ResponseEntity<String> loginPageResponse =
-                restTemplate.exchange(loginPageUrl, HttpMethod.GET,
-                        new HttpEntity<>(new HttpHeaders()), String.class);
+        ResponseEntity<String> loginPageResponse = restTemplate.exchange(loginPageUrl,
+                HttpMethod.GET, new HttpEntity<>(new HttpHeaders()), String.class);
         String loginPageCookie = extractCookie(loginPageResponse.getHeaders());
         String loginCsrfToken = extractHtmlCsrfToken(loginPageResponse.getBody());
 
@@ -1903,9 +1921,8 @@ public class SupersetApiClient {
         if (StringUtils.isNotBlank(loginPageCookie)) {
             loginHeaders.set(HttpHeaders.COOKIE, loginPageCookie);
         }
-        ResponseEntity<String> loginResponse =
-                restTemplate.exchange(loginPageUrl, HttpMethod.POST,
-                        new HttpEntity<>(loginForm, loginHeaders), String.class);
+        ResponseEntity<String> loginResponse = restTemplate.exchange(loginPageUrl, HttpMethod.POST,
+                new HttpEntity<>(loginForm, loginHeaders), String.class);
         String browserCookie =
                 mergeCookies(loginPageCookie, extractCookie(loginResponse.getHeaders()));
 
@@ -1914,9 +1931,8 @@ public class SupersetApiClient {
         if (StringUtils.isNotBlank(browserCookie)) {
             homeHeaders.set(HttpHeaders.COOKIE, browserCookie);
         }
-        ResponseEntity<String> homeResponse =
-                restTemplate.exchange(baseUrl + WELCOME_PAGE, HttpMethod.GET,
-                        new HttpEntity<>(homeHeaders), String.class);
+        ResponseEntity<String> homeResponse = restTemplate.exchange(baseUrl + WELCOME_PAGE,
+                HttpMethod.GET, new HttpEntity<>(homeHeaders), String.class);
         browserSession.cookie =
                 mergeCookies(browserCookie, extractCookie(homeResponse.getHeaders()));
         browserSession.csrfToken = extractHtmlCsrfToken(homeResponse.getBody());

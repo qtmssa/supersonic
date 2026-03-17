@@ -47,8 +47,8 @@ class ParseInfoFormatProcessorTest {
         setContext(context);
 
         SemanticParseInfo parseInfo = new SemanticParseInfo();
-        parseInfo.setDataSet(schemaElement(2L, 2L, "企业数据集", "CorporateData",
-                SchemaElementType.DATASET));
+        parseInfo.setDataSet(
+                schemaElement(2L, 2L, "企业数据集", "CorporateData", SchemaElementType.DATASET));
         String sql = "(SELECT brand_name, ds FROM `企业数据集` WHERE ds >= '2024-01-01'"
                 + " AND ds <= '2024-01-31' AND brand_name = 'OPPO' LIMIT 500 OFFSET 0)";
         parseInfo.getSqlInfo().setParsedS2SQL(sql);
@@ -56,9 +56,9 @@ class ParseInfoFormatProcessorTest {
 
         ChatParseResp response = new ChatParseResp(1L);
         response.getSelectedParses().add(parseInfo);
-        ParseContext parseContext = new ParseContext(ChatParseReq.builder().queryId(1L)
-                .queryText("查 OPPO 品牌明细").chatId(1).agentId(1).user(User.getDefaultUser())
-                .build(), response);
+        ParseContext parseContext =
+                new ParseContext(ChatParseReq.builder().queryId(1L).queryText("查 OPPO 品牌明细")
+                        .chatId(1).agentId(1).user(User.getDefaultUser()).build(), response);
 
         ParseInfoFormatProcessor processor = new ParseInfoFormatProcessor();
         processor.process(parseContext);
@@ -75,10 +75,10 @@ class ParseInfoFormatProcessorTest {
 
     private static DataSetSchema buildDataSetSchema() {
         DataSetSchema dataSetSchema = new DataSetSchema();
-        dataSetSchema.setDataSet(schemaElement(2L, 2L, "企业数据集", "CorporateData",
-                SchemaElementType.DATASET));
-        dataSetSchema.getDimensions().add(
-                schemaElement(2L, 10L, "品牌名称", "brand_name", SchemaElementType.DIMENSION));
+        dataSetSchema.setDataSet(
+                schemaElement(2L, 2L, "企业数据集", "CorporateData", SchemaElementType.DATASET));
+        dataSetSchema.getDimensions()
+                .add(schemaElement(2L, 10L, "品牌名称", "brand_name", SchemaElementType.DIMENSION));
         SchemaElement partitionDimension =
                 schemaElement(2L, 11L, "日期", "ds", SchemaElementType.DIMENSION);
         partitionDimension.getExtInfo().put("dimension_type", "partition_time");
@@ -86,8 +86,8 @@ class ParseInfoFormatProcessorTest {
         return dataSetSchema;
     }
 
-    private static SchemaElement schemaElement(Long dataSetId, Long id, String name,
-            String bizName, SchemaElementType type) {
+    private static SchemaElement schemaElement(Long dataSetId, Long id, String name, String bizName,
+            SchemaElementType type) {
         SchemaElement schemaElement = new SchemaElement();
         schemaElement.setDataSetId(dataSetId);
         schemaElement.setId(id);

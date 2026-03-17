@@ -99,7 +99,10 @@ describe('SupersetChart', () => {
     expect(args.id).toBe('uuid-456');
     expect(args.supersetDomain).toBe('https://superset.example.com');
     expect(args.iframeTitle).toBe('supersetIframe');
+    expect(args.dashboardUiConfig.hideTitle).toBe(true);
+    expect(args.dashboardUiConfig.hideTab).toBe(true);
     expect(args.dashboardUiConfig.hideChartControls).toBe(false);
+    expect(args.dashboardUiConfig.filters).toEqual({ visible: false, expanded: false });
     await expect(args.fetchGuestToken()).resolves.toBe('token-default');
   });
 

@@ -29,8 +29,8 @@ import com.tencent.supersonic.common.jsqlparser.SqlRemoveHelper;
 import com.tencent.supersonic.common.jsqlparser.SqlReplaceHelper;
 import com.tencent.supersonic.common.jsqlparser.SqlSelectHelper;
 import com.tencent.supersonic.common.pojo.User;
-import com.tencent.supersonic.common.pojo.exception.InvalidArgumentException;
 import com.tencent.supersonic.common.pojo.enums.FilterOperatorEnum;
+import com.tencent.supersonic.common.pojo.exception.InvalidArgumentException;
 import com.tencent.supersonic.common.util.DateUtils;
 import com.tencent.supersonic.common.util.JsonUtil;
 import com.tencent.supersonic.headless.api.pojo.DataSetSchema;
@@ -287,7 +287,8 @@ public class ChatQueryServiceImpl implements ChatQueryService {
     }
 
     private List<SemanticParseInfo> getSortedParseInfos(Long queryId) {
-        List<ChatParseDO> parseDOs = chatQueryRepository.getParseInfoList(Lists.newArrayList(queryId));
+        List<ChatParseDO> parseDOs =
+                chatQueryRepository.getParseInfoList(Lists.newArrayList(queryId));
         if (CollectionUtils.isEmpty(parseDOs)) {
             return new ArrayList<>();
         }
@@ -300,8 +301,7 @@ public class ChatQueryServiceImpl implements ChatQueryService {
     private List<String> getFieldsFromSql(SemanticParseInfo parseInfo) {
         SqlInfo sqlInfo = parseInfo.getSqlInfo();
         String s2Sql = Objects.isNull(sqlInfo) ? null
-                : StringUtils.defaultIfBlank(sqlInfo.getCorrectedS2SQL(),
-                        sqlInfo.getParsedS2SQL());
+                : StringUtils.defaultIfBlank(sqlInfo.getCorrectedS2SQL(), sqlInfo.getParsedS2SQL());
         if (StringUtils.isBlank(s2Sql)) {
             return new ArrayList<>();
         }
