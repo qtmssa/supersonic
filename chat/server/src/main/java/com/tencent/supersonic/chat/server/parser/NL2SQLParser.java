@@ -22,8 +22,8 @@ import com.tencent.supersonic.headless.api.pojo.request.QueryNLReq;
 import com.tencent.supersonic.headless.api.pojo.response.MapResp;
 import com.tencent.supersonic.headless.api.pojo.response.ParseResp;
 import com.tencent.supersonic.headless.api.pojo.response.QueryState;
-import com.tencent.supersonic.headless.chat.query.llm.s2sql.LLMSqlQuery;
 import com.tencent.supersonic.headless.chat.parser.ParserConfig;
+import com.tencent.supersonic.headless.chat.query.llm.s2sql.LLMSqlQuery;
 import com.tencent.supersonic.headless.server.facade.service.ChatLayerService;
 import com.tencent.supersonic.headless.server.utils.ModelConfigHelper;
 import dev.langchain4j.data.message.AiMessage;
@@ -44,8 +44,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.stream.Collectors;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 import static com.tencent.supersonic.headless.chat.parser.ParserConfig.PARSER_EXEMPLAR_RECALL_NUMBER;
 import static com.tencent.supersonic.headless.chat.parser.ParserConfig.PARSER_SHOW_COUNT;
@@ -171,10 +171,8 @@ public class NL2SQLParser implements ChatQueryParser {
             return;
         }
         ChatParseResp llmResp = parseContext.getResponse();
-        boolean llmFailed = llmResp == null
-                || llmResp.getState() == ParseResp.ParseState.FAILED
-                || llmResp.getSelectedParses() == null
-                || llmResp.getSelectedParses().isEmpty();
+        boolean llmFailed = llmResp == null || llmResp.getState() == ParseResp.ParseState.FAILED
+                || llmResp.getSelectedParses() == null || llmResp.getSelectedParses().isEmpty();
         boolean unsafeSql = !llmFailed && llmResp.getSelectedParses().stream()
                 .anyMatch(NL2SQLParser::containsTranslatorUnsafeWindowAgg);
         if (!llmFailed && !unsafeSql) {

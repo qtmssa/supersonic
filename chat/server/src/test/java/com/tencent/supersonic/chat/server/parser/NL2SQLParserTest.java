@@ -10,8 +10,8 @@ public class NL2SQLParserTest {
 
     @Test
     public void containsTranslatorUnsafeWindowAggShouldDetectAggregateInsideWindowOrderBy() {
-        SemanticParseInfo parseInfo = buildParseInfo(
-                "WITH department_visits AS (SELECT department, count(1) AS _总访问次数, "
+        SemanticParseInfo parseInfo =
+                buildParseInfo("WITH department_visits AS (SELECT department, count(1) AS _总访问次数, "
                         + "ROW_NUMBER() OVER (ORDER BY SUM(pv) DESC) AS _排名 "
                         + "FROM t_1 GROUP BY department) "
                         + "SELECT department, _总访问次数, _排名 FROM department_visits");
@@ -21,8 +21,8 @@ public class NL2SQLParserTest {
 
     @Test
     public void containsTranslatorUnsafeWindowAggShouldAllowRankingByProjectedAlias() {
-        SemanticParseInfo parseInfo = buildParseInfo(
-                "WITH department_visits AS (SELECT department, count(1) AS _总访问次数 "
+        SemanticParseInfo parseInfo =
+                buildParseInfo("WITH department_visits AS (SELECT department, count(1) AS _总访问次数 "
                         + "FROM t_1 GROUP BY department), "
                         + "ranked_departments AS (SELECT department, _总访问次数, "
                         + "ROW_NUMBER() OVER (ORDER BY _总访问次数 DESC) AS _排名 "

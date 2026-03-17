@@ -30,6 +30,9 @@ import java.util.regex.Pattern;
 @Slf4j
 public class SupersetApiClient {
 
+    private static final java.util.Set<String> LEGACY_EXPLORE_JSON_VIZ_TYPES =
+            new java.util.HashSet<>(java.util.Arrays.asList("rose", "partition"));
+
     private static final String CHART_API = "/api/v1/chart/";
     private static final String GUEST_TOKEN_API = "/api/v1/security/guest_token/";
     private static final String DASHBOARD_API = "/api/v1/dashboard/";
@@ -53,16 +56,14 @@ public class SupersetApiClient {
     private static final String EMBEDDED_UI_CONFIG = "3";
     private static final String TAG_API = "/api/v1/tag/";
     private static final String LOGIN_PAGE = "/login/";
-    private static final String LOGIN_PAGE_NEXT =
-            "/login/?next=%2Fsuperset%2Fwelcome%2F";
+    private static final String LOGIN_PAGE_NEXT = "/login/?next=%2Fsuperset%2Fwelcome%2F";
     private static final String WELCOME_PAGE = "/superset/welcome/";
     private static final String LOGIN_API = "/api/v1/security/login";
     private static final String REFRESH_API = "/api/v1/security/refresh";
     private static final String CSRF_API = "/api/v1/security/csrf_token/";
     private static final int TAG_OBJECT_DASHBOARD = 3;
     private static final Pattern HTML_CSRF_PATTERN = Pattern.compile(
-            "name=[\"']csrf_token[\"'][^>]*value=[\"']([^\"']+)[\"']",
-            Pattern.CASE_INSENSITIVE);
+            "name=[\"']csrf_token[\"'][^>]*value=[\"']([^\"']+)[\"']", Pattern.CASE_INSENSITIVE);
 
     private static volatile SupersetVizTypeSelector.VizTypeCatalog VIZTYPE_CATALOG;
 
@@ -668,8 +669,9 @@ public class SupersetApiClient {
         Map<String, Object> payload = new HashMap<>();
         payload.put("params", JsonUtil.toString(merged));
         Map<String, Object> templateContext = template == null ? null : template.queryContext;
-        Map<String, Object> queryContext =
-                buildQueryContext(merged, datasetId, vizType, templateContext);
+        Map<String, Object> queryContext = shouldPersistQueryContext(vizType)
+                ? buildQueryContext(merged, datasetId, vizType, templateContext)
+                : null;
         if (queryContext != null) {
             sanitizeQueryContext(queryContext);
             payload.put("query_context", JsonUtil.toString(queryContext));
@@ -688,6 +690,14 @@ public class SupersetApiClient {
     Map<String, Object> buildQueryContext(Map<String, Object> formData, Long datasetId,
             String vizType) {
         return buildQueryContext(formData, datasetId, vizType, null);
+    }
+
+    boolean shouldPersistQueryContext(String vizType) {
+        if (StringUtils.isBlank(vizType)) {
+            return true;
+        }
+        return !LEGACY_EXPLORE_JSON_VIZ_TYPES
+                .contains(StringUtils.lowerCase(StringUtils.trim(vizType)));
     }
 
     private Map<String, Object> buildQueryContext(Map<String, Object> formData, Long datasetId,
@@ -1886,9 +1896,8 @@ public class SupersetApiClient {
             return;
         }
         String loginPageUrl = baseUrl + LOGIN_PAGE_NEXT;
-        ResponseEntity<String> loginPageResponse =
-                restTemplate.exchange(loginPageUrl, HttpMethod.GET,
-                        new HttpEntity<>(new HttpHeaders()), String.class);
+        ResponseEntity<String> loginPageResponse = restTemplate.exchange(loginPageUrl,
+                HttpMethod.GET, new HttpEntity<>(new HttpHeaders()), String.class);
         String loginPageCookie = extractCookie(loginPageResponse.getHeaders());
         String loginCsrfToken = extractHtmlCsrfToken(loginPageResponse.getBody());
 
@@ -1903,9 +1912,8 @@ public class SupersetApiClient {
         if (StringUtils.isNotBlank(loginPageCookie)) {
             loginHeaders.set(HttpHeaders.COOKIE, loginPageCookie);
         }
-        ResponseEntity<String> loginResponse =
-                restTemplate.exchange(loginPageUrl, HttpMethod.POST,
-                        new HttpEntity<>(loginForm, loginHeaders), String.class);
+        ResponseEntity<String> loginResponse = restTemplate.exchange(loginPageUrl, HttpMethod.POST,
+                new HttpEntity<>(loginForm, loginHeaders), String.class);
         String browserCookie =
                 mergeCookies(loginPageCookie, extractCookie(loginResponse.getHeaders()));
 
@@ -1914,9 +1922,8 @@ public class SupersetApiClient {
         if (StringUtils.isNotBlank(browserCookie)) {
             homeHeaders.set(HttpHeaders.COOKIE, browserCookie);
         }
-        ResponseEntity<String> homeResponse =
-                restTemplate.exchange(baseUrl + WELCOME_PAGE, HttpMethod.GET,
-                        new HttpEntity<>(homeHeaders), String.class);
+        ResponseEntity<String> homeResponse = restTemplate.exchange(baseUrl + WELCOME_PAGE,
+                HttpMethod.GET, new HttpEntity<>(homeHeaders), String.class);
         browserSession.cookie =
                 mergeCookies(browserCookie, extractCookie(homeResponse.getHeaders()));
         browserSession.csrfToken = extractHtmlCsrfToken(homeResponse.getBody());
