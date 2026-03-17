@@ -163,7 +163,9 @@ public class SupersetApiClient {
                 continue;
             }
             SupersetChartInfo chartInfo = createChartForDashboard(dashboardId, datasetId,
-                    request.getChartName(), request.getVizType(), request.getFormData());
+                    request.getChartName(),
+                    StringUtils.defaultIfBlank(request.getBuildVizType(), request.getVizType()),
+                    request.getFormData());
             charts.add(chartInfo);
             chartIds.add(chartInfo.getChartId());
             chartHeights.add(request.getDashboardHeight());
@@ -668,20 +670,32 @@ public class SupersetApiClient {
         sanitizeMetricOptionNames(merged);
         Map<String, Object> payload = new HashMap<>();
         payload.put("params", JsonUtil.toString(merged));
+        boolean persistQueryContext = shouldPersistQueryContext(vizType);
         Map<String, Object> templateContext = template == null ? null : template.queryContext;
-        Map<String, Object> queryContext = shouldPersistQueryContext(vizType)
+        Map<String, Object> queryContext = persistQueryContext
                 ? buildQueryContext(merged, datasetId, vizType, templateContext)
                 : null;
+        String requestBody;
         if (queryContext != null) {
             sanitizeQueryContext(queryContext);
             payload.put("query_context", JsonUtil.toString(queryContext));
             payload.put("query_context_generation", true);
+            requestBody = JsonUtil.toString(payload);
+        } else if (isLegacyExploreJsonVizType(vizType)) {
+            // Superset may auto-populate query_context during chart creation.
+            // Legacy explore_json charts must clear it explicitly or guest embed hits 403.
+            ObjectNode payloadNode = new ObjectMapper().createObjectNode();
+            payloadNode.put("params", JsonUtil.toString(merged));
+            payloadNode.putNull("query_context");
+            payloadNode.put("query_context_generation", false);
+            requestBody = payloadNode.toString();
+        } else {
+            requestBody = JsonUtil.toString(payload);
         }
         try {
             log.debug("superset chart params update payload, chartId={}, templateId={}, payload={}",
-                    chartId, template == null ? null : template.chartId,
-                    JsonUtil.toString(payload));
-            put(CHART_API + chartId, payload);
+                    chartId, template == null ? null : template.chartId, requestBody);
+            put(CHART_API + chartId, requestBody);
         } catch (HttpStatusCodeException ex) {
             log.warn("superset chart params update failed, chartId={}", chartId, ex);
         }
@@ -696,7 +710,14 @@ public class SupersetApiClient {
         if (StringUtils.isBlank(vizType)) {
             return true;
         }
-        return !LEGACY_EXPLORE_JSON_VIZ_TYPES
+        return !isLegacyExploreJsonVizType(vizType);
+    }
+
+    boolean isLegacyExploreJsonVizType(String vizType) {
+        if (StringUtils.isBlank(vizType)) {
+            return false;
+        }
+        return LEGACY_EXPLORE_JSON_VIZ_TYPES
                 .contains(StringUtils.lowerCase(StringUtils.trim(vizType)));
     }
 
@@ -1759,8 +1780,12 @@ public class SupersetApiClient {
     private Map<String, Object> execute(HttpMethod method, String path, Object body,
             HttpHeaders headers) {
         String url = baseUrl + path;
+        String requestBody = null;
+        if (body != null) {
+            requestBody = body instanceof String ? (String) body : JsonUtil.toString(body);
+        }
         HttpEntity<String> entity = body == null ? new HttpEntity<>(headers)
-                : new HttpEntity<>(JsonUtil.toString(body), headers);
+                : new HttpEntity<>(requestBody, headers);
         ResponseEntity<Object> response = restTemplate.exchange(url, method, entity, Object.class);
         log.debug("superset response, method={}, path={}, status={}", method, path,
                 response.getStatusCode());

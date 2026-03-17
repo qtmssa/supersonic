@@ -9,6 +9,8 @@ public class SupersetChartBuildRequest {
 
     private String vizType;
 
+    private String buildVizType;
+
     private String vizName;
 
     private String chartName;

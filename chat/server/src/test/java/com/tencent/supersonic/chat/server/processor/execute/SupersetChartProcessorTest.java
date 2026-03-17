@@ -715,9 +715,17 @@ public class SupersetChartProcessorTest {
 
         Assertions.assertEquals(4, requests.size());
         Assertions.assertEquals("rose", invokeGetter(requests.get(0), "getVizType"));
+        Assertions.assertEquals("pie", invokeGetter(requests.get(0), "getBuildVizType"));
+        @SuppressWarnings("unchecked")
+        Map<String, Object> roseFormData =
+                (Map<String, Object>) invokeGetter(requests.get(0), "getFormData");
+        Assertions.assertEquals("area", roseFormData.get("roseType"));
         Assertions.assertEquals("pie", invokeGetter(requests.get(1), "getVizType"));
+        Assertions.assertEquals("pie", invokeGetter(requests.get(1), "getBuildVizType"));
         Assertions.assertEquals("partition", invokeGetter(requests.get(2), "getVizType"));
+        Assertions.assertEquals("partition", invokeGetter(requests.get(2), "getBuildVizType"));
         Assertions.assertEquals("table", invokeGetter(requests.get(3), "getVizType"));
+        Assertions.assertEquals("table", invokeGetter(requests.get(3), "getBuildVizType"));
     }
 
     private SupersetDatasetColumn buildColumn(String name, String type, boolean groupby,

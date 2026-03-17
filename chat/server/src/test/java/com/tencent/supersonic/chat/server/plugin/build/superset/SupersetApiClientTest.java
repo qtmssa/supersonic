@@ -23,6 +23,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.net.URI;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
@@ -770,6 +771,104 @@ public class SupersetApiClientTest {
         Assertions.assertFalse(client.shouldPersistQueryContext("rose"));
         Assertions.assertFalse(client.shouldPersistQueryContext("partition"));
         Assertions.assertTrue(client.shouldPersistQueryContext("table"));
+        Assertions.assertTrue(client.isLegacyExploreJsonVizType("rose"));
+        Assertions.assertTrue(client.isLegacyExploreJsonVizType("partition"));
+        Assertions.assertFalse(client.isLegacyExploreJsonVizType("table"));
+    }
+
+    @Test
+    public void testUpdateChartParamsClearsLegacyQueryContext() throws Exception {
+        SupersetPluginConfig config = new SupersetPluginConfig();
+        config.setBaseUrl("http://localhost:8088/");
+        SupersetApiClient client = new SupersetApiClient(config);
+        RoutingFactory factory = new RoutingFactory();
+        factory.add(HttpMethod.GET, "http://localhost:8088/api/v1/chart/304", HttpStatus.OK,
+                "{\"result\":{\"params\":\"{}\"}}");
+        factory.add(HttpMethod.PUT, "http://localhost:8088/api/v1/chart/304", HttpStatus.OK,
+                "{\"result\":{}}");
+        replaceRestTemplate(client, new RestTemplate(factory));
+
+        Method method = SupersetApiClient.class.getDeclaredMethod("updateChartParams", Long.class,
+                Long.class, Map.class, String.class, Long.class,
+                Class.forName("com.tencent.supersonic.chat.server.plugin.build.superset."
+                        + "SupersetApiClient$ChartTemplateSnapshot"));
+        method.setAccessible(true);
+
+        Map<String, Object> formData = new HashMap<>();
+        formData.put("groupby", Collections.singletonList("brand_name"));
+        formData.put("metrics", Collections.singletonList("revenue"));
+        formData.put("row_limit", 500);
+        formData.put("series_limit", 500);
+        method.invoke(client, 304L, 315L, formData, "rose", 848L, null);
+
+        RecordingRequest putRequest =
+                factory.getLastRequest(HttpMethod.PUT, "http://localhost:8088/api/v1/chart/304");
+        Assertions.assertNotNull(putRequest);
+        Map<String, Object> body = JsonUtil.toObject(putRequest.getWrittenBody(), Map.class);
+        Assertions.assertTrue(body.containsKey("query_context"));
+        Assertions.assertNull(body.get("query_context"));
+        Assertions.assertEquals(Boolean.FALSE, body.get("query_context_generation"));
+    }
+
+    @Test
+    public void testCreateEmbeddedDashboardUsesBuildVizTypeWhenPresent() throws Exception {
+        SupersetPluginConfig config = new SupersetPluginConfig();
+        config.setBaseUrl("http://localhost:8088/");
+        SupersetApiClient client = new SupersetApiClient(config);
+        RoutingFactory factory = new RoutingFactory();
+        factory.add(HttpMethod.POST, "http://localhost:8088/api/v1/dashboard/", HttpStatus.OK,
+                "{\"result\":{\"id\":77}}");
+        factory.add(HttpMethod.GET, "http://localhost:8088/api/v1/dashboard/77",
+                HttpStatus.NOT_FOUND, "{\"message\":\"Not found\"}");
+        factory.add(HttpMethod.POST, "http://localhost:8088/api/v1/chart/", HttpStatus.OK,
+                "{\"result\":{\"id\":304}}");
+        factory.add(HttpMethod.GET, "http://localhost:8088/api/v1/chart/304", HttpStatus.OK,
+                "{\"result\":{\"uuid\":\"chart-304\",\"dashboards\":[],\"params\":\"{}\"}}");
+        factory.add(HttpMethod.PUT, "http://localhost:8088/api/v1/chart/304", HttpStatus.OK,
+                "{\"result\":{}}");
+        factory.add(HttpMethod.PUT, "http://localhost:8088/api/v1/dashboard/77", HttpStatus.OK,
+                "{\"result\":{}}");
+        factory.add(HttpMethod.GET, "http://localhost:8088/api/v1/dashboard/77/embedded",
+                HttpStatus.NOT_FOUND, "{\"message\":\"Not found\"}");
+        factory.add(HttpMethod.POST, "http://localhost:8088/api/v1/dashboard/77/embedded",
+                HttpStatus.OK, "{\"result\":{\"uuid\":\"embed-77\"}}");
+        factory.add(HttpMethod.POST, "http://localhost:8088/api/v1/security/guest_token/",
+                HttpStatus.OK, "{\"result\":{\"token\":\"guest-token\"}}");
+        replaceRestTemplate(client, new RestTemplate(factory));
+
+        SupersetChartBuildRequest request = new SupersetChartBuildRequest();
+        request.setVizType("rose");
+        request.setBuildVizType("pie");
+        request.setChartName("Rose Candidate");
+        request.setDashboardHeight(260);
+        Map<String, Object> formData = new HashMap<>();
+        formData.put("groupby", Collections.singletonList("brand_name"));
+        formData.put("metrics", Collections.singletonList("revenue"));
+        request.setFormData(formData);
+
+        SupersetEmbeddedDashboardInfo dashboardInfo = client.createEmbeddedDashboard(
+                "rose dashboard", Collections.singletonList(request), 848L, 1L, "sales",
+                Collections.emptyList());
+
+        Assertions.assertNotNull(dashboardInfo);
+        Assertions.assertEquals(77L, dashboardInfo.getDashboardId());
+        RecordingRequest createRequest =
+                factory.getLastRequest(HttpMethod.POST, "http://localhost:8088/api/v1/chart/");
+        Assertions.assertNotNull(createRequest);
+        Map<String, Object> createBody =
+                JsonUtil.toObject(createRequest.getWrittenBody(), Map.class);
+        Map<String, Object> createParams =
+                JsonUtil.toObject(String.valueOf(createBody.get("params")), Map.class);
+        Assertions.assertEquals("pie", createParams.get("viz_type"));
+
+        RecordingRequest updateRequest =
+                factory.getLastRequest(HttpMethod.PUT, "http://localhost:8088/api/v1/chart/304");
+        Assertions.assertNotNull(updateRequest);
+        Map<String, Object> updateBody =
+                JsonUtil.toObject(updateRequest.getWrittenBody(), Map.class);
+        Map<String, Object> updateParams =
+                JsonUtil.toObject(String.valueOf(updateBody.get("params")), Map.class);
+        Assertions.assertEquals("pie", updateParams.get("viz_type"));
     }
 
     @Test

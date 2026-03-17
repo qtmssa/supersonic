@@ -679,6 +679,7 @@ public class SupersetChartProcessor implements ExecuteResultProcessor {
                 continue;
             }
             String vizType = candidate.getVizType();
+            String buildVizType = resolveBuildVizType(vizType);
             boolean tableCandidate = StringUtils.equalsIgnoreCase(vizType, "table");
             if (!tableCandidate && visualRequestCount >= 3) {
                 continue;
@@ -686,13 +687,12 @@ public class SupersetChartProcessor implements ExecuteResultProcessor {
             String candidateChartName =
                     buildCandidateChartName(chartName, vizType, i, candidate.getLlmName());
             try {
-                Map<String, Object> formData = buildFormData(config, executeContext.getParseInfo(),
-                        queryResult, datasetInfo, vizType, executeContext.getAgent(),
-                        executeContext.getRequest() == null ? null
-                                : executeContext.getRequest().getQueryText());
+                Map<String, Object> formData =
+                        prepareBuildFormData(config, executeContext, queryResult, datasetInfo,
+                                vizType, buildVizType);
                 log.debug(
-                        "superset chart formData prepared, vizType={}, keys={}, size={}, datasetColumns={}, datasetMetrics={}, parseMetrics={}, parseDimensions={}",
-                        vizType, formData.keySet(), formData.size(),
+                        "superset chart formData prepared, vizType={}, buildVizType={}, keys={}, size={}, datasetColumns={}, datasetMetrics={}, parseMetrics={}, parseDimensions={}",
+                        vizType, buildVizType, formData.keySet(), formData.size(),
                         datasetInfo == null || datasetInfo.getColumns() == null ? 0
                                 : datasetInfo.getColumns().size(),
                         datasetInfo == null || datasetInfo.getMetrics() == null ? 0
@@ -705,6 +705,7 @@ public class SupersetChartProcessor implements ExecuteResultProcessor {
                                         : executeContext.getParseInfo().getDimensions().size());
                 SupersetChartBuildRequest request = new SupersetChartBuildRequest();
                 request.setVizType(vizType);
+                request.setBuildVizType(buildVizType);
                 request.setVizName(StringUtils.defaultIfBlank(candidate.getLlmName(),
                         StringUtils.defaultIfBlank(candidate.getName(), vizType)));
                 request.setChartName(candidateChartName);
@@ -726,6 +727,36 @@ public class SupersetChartProcessor implements ExecuteResultProcessor {
             requests.add(tableRequest);
         }
         return requests;
+    }
+
+    private Map<String, Object> prepareBuildFormData(SupersetPluginConfig config,
+            ExecuteContext executeContext, QueryResult queryResult, SupersetDatasetInfo datasetInfo,
+            String displayVizType, String buildVizType) {
+        Map<String, Object> formData =
+                buildFormData(config, executeContext.getParseInfo(), queryResult, datasetInfo,
+                        buildVizType, executeContext.getAgent(),
+                        executeContext.getRequest() == null ? null
+                                : executeContext.getRequest().getQueryText());
+        return applyBuildVizTypeOverrides(formData, displayVizType, buildVizType);
+    }
+
+    private String resolveBuildVizType(String vizType) {
+        if (StringUtils.equalsIgnoreCase(vizType, "rose")) {
+            return "pie";
+        }
+        return vizType;
+    }
+
+    private Map<String, Object> applyBuildVizTypeOverrides(Map<String, Object> formData,
+            String displayVizType, String buildVizType) {
+        Map<String, Object> resolved = formData == null ? new HashMap<>() : formData;
+        if (StringUtils.equalsIgnoreCase(displayVizType, "rose")
+                && StringUtils.equalsIgnoreCase(buildVizType, "pie")) {
+            resolved.put("roseType", "area");
+            resolved.putIfAbsent("show_legend", true);
+            resolved.remove("rose_area_proportion");
+        }
+        return resolved;
     }
 
     private List<SupersetVizTypeSelector.VizTypeItem> prioritizeChartCandidates(
@@ -780,8 +811,9 @@ public class SupersetChartProcessor implements ExecuteResultProcessor {
             String candidateDashboardTitle =
                     buildCandidateDashboardTitle(dashboardTitle, request.getVizName(), i);
             SupersetChartInfo chartInfo = client.createEmbeddedChart(sql, request.getChartName(),
-                    request.getVizType(), request.getFormData(), datasetId, databaseId, schema,
-                    dashboardTags, request.getDashboardHeight(), candidateDashboardTitle);
+                    StringUtils.defaultIfBlank(request.getBuildVizType(), request.getVizType()),
+                    request.getFormData(), datasetId, databaseId, schema, dashboardTags,
+                    request.getDashboardHeight(), candidateDashboardTitle);
             SupersetChartCandidate candidate = new SupersetChartCandidate();
             candidate.setVizType(request.getVizType());
             candidate.setVizName(request.getVizName());
