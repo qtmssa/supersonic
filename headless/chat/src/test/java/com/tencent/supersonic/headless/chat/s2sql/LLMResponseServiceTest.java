@@ -86,7 +86,8 @@ class LLMResponseServiceTest {
         Assert.assertEquals(Long.valueOf(7L), parseResult.getDataSetId());
         Assert.assertNull(parseResult.getLlmResp());
         Assert.assertEquals("品牌营收", parseResult.getLlmReq().getQueryText());
-        Assert.assertEquals("营收", parseResult.getLlmReq().getSchema().getMetrics().get(0).getName());
+        Assert.assertEquals("营收",
+                parseResult.getLlmReq().getSchema().getMetrics().get(0).getName());
         Assert.assertEquals("品牌名称",
                 parseResult.getLlmReq().getSchema().getDimensions().get(0).getName());
         Assert.assertEquals("品牌名称",

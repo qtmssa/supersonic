@@ -47,8 +47,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.CollectionUtils;
 
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.Date;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -117,7 +117,8 @@ public class SupersetDatasetRegistryServiceImpl
         DatasetSchemaSpec schemaSpec = buildDatasetSchema(parseInfo, normalizedSql, queryColumns);
         List<SupersetDatasetColumn> columns = schemaSpec.getColumns();
         List<SupersetDatasetMetric> metrics = schemaSpec.getMetrics();
-        log.debug("superset dataset register schema, sqlHash={}, queryColumns={}, columns={}, metrics={}",
+        log.debug(
+                "superset dataset register schema, sqlHash={}, queryColumns={}, columns={}, metrics={}",
                 sqlHash,
                 queryColumns == null ? Collections.emptyList()
                         : queryColumns.stream().map(QueryColumn::getBizName)
@@ -190,9 +191,11 @@ public class SupersetDatasetRegistryServiceImpl
         wrapper.eq(SupersetDatasetDO::getDataSetId, dataSetId)
                 .eq(SupersetDatasetDO::getSyncState, SupersetDatasetSyncState.SUCCESS.name())
                 .isNotNull(SupersetDatasetDO::getSupersetDatasetId)
-                .and(w -> w.eq(SupersetDatasetDO::getSourceType,
-                        SupersetDatasetSourceType.SEMANTIC_DATASET.name()).or()
-                        .eq(SupersetDatasetDO::getDatasetType, SupersetDatasetType.PHYSICAL.name()));
+                .and(w -> w
+                        .eq(SupersetDatasetDO::getSourceType,
+                                SupersetDatasetSourceType.SEMANTIC_DATASET.name())
+                        .or().eq(SupersetDatasetDO::getDatasetType,
+                                SupersetDatasetType.PHYSICAL.name()));
         List<SupersetDatasetDO> records = list(wrapper);
         if (CollectionUtils.isEmpty(records)) {
             return Collections.emptyList();
@@ -667,7 +670,8 @@ public class SupersetDatasetRegistryServiceImpl
                         buildDatasetMetrics(queryFields));
             }
         }
-        return new DatasetSchemaSpec(buildDatasetColumns(parseInfo), buildDatasetMetrics(parseInfo));
+        return new DatasetSchemaSpec(buildDatasetColumns(parseInfo),
+                buildDatasetMetrics(parseInfo));
     }
 
     private List<DatasetOutputField> buildOutputFields(SemanticParseInfo parseInfo, String sql,
@@ -692,9 +696,9 @@ public class SupersetDatasetRegistryServiceImpl
             if (StringUtils.isBlank(outputName)) {
                 continue;
             }
-            QueryColumn queryColumn = positionalColumn == null
-                    ? queryColumnLookup.get(normalizeName(outputName))
-                    : positionalColumn;
+            QueryColumn queryColumn =
+                    positionalColumn == null ? queryColumnLookup.get(normalizeName(outputName))
+                            : positionalColumn;
             Set<String> sourceFields = resolveSourceFields(selectItem.getExpression());
             SchemaElement metricElement =
                     resolveMatchedElement(metricLookup, outputName, sourceFields);
@@ -710,8 +714,8 @@ public class SupersetDatasetRegistryServiceImpl
             outputField.setOutputName(outputName);
             outputField.setVerboseName(resolveVerboseName(queryColumn, metricElement,
                     dimensionElement, outputField.getOutputName()));
-            outputField.setDescription(resolveDescription(queryColumn, metricElement,
-                    dimensionElement));
+            outputField.setDescription(
+                    resolveDescription(queryColumn, metricElement, dimensionElement));
             outputField.setDttm(isTime);
             outputField.setGroupby(groupBy);
             outputField.setFilterable(groupBy);
@@ -738,8 +742,8 @@ public class SupersetDatasetRegistryServiceImpl
             boolean groupBy = !numeric || isTime;
             DatasetOutputField outputField = new DatasetOutputField();
             outputField.setOutputName(queryColumn.getBizName());
-            outputField.setVerboseName(StringUtils.defaultIfBlank(queryColumn.getName(),
-                    queryColumn.getBizName()));
+            outputField.setVerboseName(
+                    StringUtils.defaultIfBlank(queryColumn.getName(), queryColumn.getBizName()));
             outputField.setDescription(queryColumn.getComment());
             outputField.setDttm(isTime);
             outputField.setGroupby(groupBy);
@@ -851,8 +855,8 @@ public class SupersetDatasetRegistryServiceImpl
         if (CollectionUtils.isEmpty(outputFields)) {
             return Collections.emptyList();
         }
-        List<DatasetOutputField> selectedMetrics = outputFields.stream()
-                .filter(field -> field != null && field.isMatchedMetric() && field.isMetricCandidate())
+        List<DatasetOutputField> selectedMetrics = outputFields.stream().filter(
+                field -> field != null && field.isMatchedMetric() && field.isMetricCandidate())
                 .collect(Collectors.toList());
         if (selectedMetrics.isEmpty()) {
             selectedMetrics = outputFields.stream()
@@ -866,8 +870,8 @@ public class SupersetDatasetRegistryServiceImpl
             }
             SupersetDatasetMetric metric = new SupersetDatasetMetric();
             metric.setMetricName(outputField.getOutputName());
-            metric.setExpression(buildMetricExpression(outputField.getOutputName(),
-                    outputField.getAggregate()));
+            metric.setExpression(
+                    buildMetricExpression(outputField.getOutputName(), outputField.getAggregate()));
             metric.setMetricType("SQL");
             metric.setVerboseName(StringUtils.defaultIfBlank(outputField.getVerboseName(),
                     outputField.getOutputName()));
@@ -956,7 +960,8 @@ public class SupersetDatasetRegistryServiceImpl
         if (selectItem == null) {
             return null;
         }
-        if (selectItem.getAlias() != null && StringUtils.isNotBlank(selectItem.getAlias().getName())) {
+        if (selectItem.getAlias() != null
+                && StringUtils.isNotBlank(selectItem.getAlias().getName())) {
             return StringUtil.replaceBackticks(selectItem.getAlias().getName());
         }
         if (positionalColumn != null && StringUtils.isNotBlank(positionalColumn.getBizName())) {
@@ -984,8 +989,8 @@ public class SupersetDatasetRegistryServiceImpl
         return sourceFields;
     }
 
-    private SchemaElement resolveMatchedElement(Map<String, SchemaElement> lookup, String outputName,
-            Set<String> sourceFields) {
+    private SchemaElement resolveMatchedElement(Map<String, SchemaElement> lookup,
+            String outputName, Set<String> sourceFields) {
         if (lookup == null || lookup.isEmpty()) {
             return null;
         }

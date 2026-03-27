@@ -45,7 +45,7 @@ public class RuleSqlParser implements SemanticParser {
         LLMResponseService responseService = ContextUtils.getBean(LLMResponseService.class);
         candidateQueries.forEach(query -> query.buildS2Sql(
                 chatQueryContext.getDataSetSchema(query.getParseInfo().getDataSetId())));
-        candidateQueries.forEach(query -> responseService.addParseContext(chatQueryContext,
-                query.getParseInfo()));
+        candidateQueries.forEach(
+                query -> responseService.addParseContext(chatQueryContext, query.getParseInfo()));
     }
 }

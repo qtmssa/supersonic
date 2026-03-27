@@ -12,7 +12,9 @@ jest.mock('./ExecuteItem', () => (props: any) => (
 jest.mock('./ExpandParseTip', () => () => null);
 jest.mock('./ParseTip', () => () => null);
 jest.mock('./SqlItem', () => () => null);
-jest.mock('./SimilarQuestionItem', () => () => null);
+jest.mock('./SimilarQuestionItem', () => (props: any) => (
+  <div data-testid="similar-question-item" data-default-expanded={String(props.defaultExpanded)} />
+));
 jest.mock('../Tools', () => () => null);
 jest.mock('../IconFont', () => () => null);
 jest.mock('../../service', () => ({
@@ -87,6 +89,37 @@ describe('ChatItem', () => {
       expect(executeItem).toHaveAttribute('data-has-data', 'true');
       expect(executeItem).toHaveAttribute('data-query-mode', 'SUPERSET');
       expect(executeItem).toHaveAttribute('data-execute-tip', '');
+    });
+  });
+
+  test('renders similar questions expanded by default after execution', async () => {
+    render(
+      <ChatItem
+        msg=""
+        conversationId={20}
+        msgData={
+          {
+            queryId: 66,
+            queryMode: 'SQL',
+            queryState: 'SUCCESS',
+            queryColumns: [{ nameEn: 'sales', name: '销售额' }],
+            queryResults: [{ sales: 10 }],
+            chatContext: {
+              id: 1,
+              dimensionFilters: [],
+              dateInfo: {},
+            },
+            similarQueries: [],
+          } as any
+        }
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('similar-question-item')).toHaveAttribute(
+        'data-default-expanded',
+        'true'
+      );
     });
   });
 });

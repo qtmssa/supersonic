@@ -19,8 +19,8 @@ class AgentServiceImplTest {
                         .prompt("DEFAULT_PROMPT").enable(true).chatModelId(1)
                         .appModule(AppModule.CHAT).build());
 
-        Map<String, ChatApp> merged = service.mergeChatAppConfigs(Map.of("S2SQL_PARSER",
-                ChatApp.builder().name("语义SQL解析").description("通过大模型生成语义SQL")
+        Map<String, ChatApp> merged = service.mergeChatAppConfigs(
+                Map.of("S2SQL_PARSER", ChatApp.builder().name("语义SQL解析").description("通过大模型生成语义SQL")
                         .prompt("").enable(true).chatModelId(2).build()));
 
         Assertions.assertEquals(1, merged.size());
@@ -32,8 +32,8 @@ class AgentServiceImplTest {
     void normalizeChatAppConfigsShouldDropBlankPromptBeforePersist() {
         AgentServiceImpl service = new AgentServiceImpl();
 
-        Map<String, ChatApp> normalized = service.normalizeChatAppConfigs(Map.of("S2SQL_PARSER",
-                ChatApp.builder().name("语义SQL解析").description("通过大模型生成语义SQL")
+        Map<String, ChatApp> normalized = service.normalizeChatAppConfigs(
+                Map.of("S2SQL_PARSER", ChatApp.builder().name("语义SQL解析").description("通过大模型生成语义SQL")
                         .prompt("").enable(true).chatModelId(2).build()));
 
         Assertions.assertNull(normalized.get("S2SQL_PARSER").getPrompt());

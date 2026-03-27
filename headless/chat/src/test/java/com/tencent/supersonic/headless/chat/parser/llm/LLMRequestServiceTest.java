@@ -31,15 +31,13 @@ class LLMRequestServiceTest {
         ChatQueryContext queryCtx = new ChatQueryContext(request);
         DataSetSchema dataSetSchema = buildDataSetSchema();
         queryCtx.setSemanticSchema(new SemanticSchema(List.of(dataSetSchema)));
-        queryCtx.getMapInfo().setMatchedElements(2L, List.of(
-                match(dataSetSchema.getDataSet()),
+        queryCtx.getMapInfo().setMatchedElements(2L, List.of(match(dataSetSchema.getDataSet()),
                 match(dimension(2L, 14L, "品牌名称", "brand_name"))));
 
         LLMReq llmReq = requestService.getLlmReq(queryCtx, 2L);
 
-        Assertions.assertEquals(List.of("利润", "营收"),
-                llmReq.getSchema().getMetrics().stream().map(SchemaElement::getName).sorted()
-                        .toList());
+        Assertions.assertEquals(List.of("利润", "营收"), llmReq.getSchema().getMetrics().stream()
+                .map(SchemaElement::getName).sorted().toList());
         Assertions.assertEquals(List.of("品牌名称"),
                 llmReq.getSchema().getDimensions().stream().map(SchemaElement::getName).toList());
     }

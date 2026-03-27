@@ -72,8 +72,7 @@ public class PromptHelper {
                 noSame.sort(Comparator.comparingDouble(Text2SQLExemplar::getSimilarity));
                 noSame = noSame.subList((noSame.size() - fewShotNumber) / 2, noSame.size());
             }
-            Text2SQLExemplar mostSimilar =
-                    noSame.isEmpty() ? null : noSame.get(noSame.size() - 1);
+            Text2SQLExemplar mostSimilar = noSame.isEmpty() ? null : noSame.get(noSame.size() - 1);
             Collections.shuffle(noSame);
             List<Text2SQLExemplar> ts;
             if (same.size() > 0) {// 一样的话，必须作为提示语

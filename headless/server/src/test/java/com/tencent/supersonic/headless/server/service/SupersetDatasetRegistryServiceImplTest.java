@@ -1,7 +1,7 @@
 package com.tencent.supersonic.headless.server.service;
 
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.Wrapper;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.tencent.supersonic.common.pojo.QueryColumn;
 import com.tencent.supersonic.common.pojo.User;
 import com.tencent.supersonic.common.pojo.exception.InvalidPermissionException;
@@ -79,23 +79,23 @@ public class SupersetDatasetRegistryServiceImplTest {
     public void listAvailablePersistentDatasetsShouldFilterAndSortByPriority() {
         SeededSupersetDatasetRegistryServiceImpl service = buildSeededService(Arrays.asList(
                 buildRegistryRecord(10L, 101L, SupersetDatasetSourceType.SEMANTIC_DATASET.name(),
-                        SupersetDatasetType.VIRTUAL.name(),
-                        SupersetDatasetSyncState.SUCCESS.name(), new Date(1000L)),
+                        SupersetDatasetType.VIRTUAL.name(), SupersetDatasetSyncState.SUCCESS.name(),
+                        new Date(1000L)),
                 buildRegistryRecord(10L, 102L, SupersetDatasetSourceType.CHAT_SQL.name(),
                         SupersetDatasetType.PHYSICAL.name(),
                         SupersetDatasetSyncState.SUCCESS.name(), new Date(2000L)),
                 buildRegistryRecord(10L, 103L, SupersetDatasetSourceType.CHAT_SQL.name(),
-                        SupersetDatasetType.VIRTUAL.name(),
-                        SupersetDatasetSyncState.SUCCESS.name(), new Date(3000L)),
+                        SupersetDatasetType.VIRTUAL.name(), SupersetDatasetSyncState.SUCCESS.name(),
+                        new Date(3000L)),
                 buildRegistryRecord(10L, 104L, SupersetDatasetSourceType.SEMANTIC_DATASET.name(),
-                        SupersetDatasetType.VIRTUAL.name(),
-                        SupersetDatasetSyncState.FAILED.name(), new Date(4000L)),
+                        SupersetDatasetType.VIRTUAL.name(), SupersetDatasetSyncState.FAILED.name(),
+                        new Date(4000L)),
                 buildRegistryRecord(11L, 105L, SupersetDatasetSourceType.SEMANTIC_DATASET.name(),
-                        SupersetDatasetType.VIRTUAL.name(),
-                        SupersetDatasetSyncState.SUCCESS.name(), new Date(5000L)),
+                        SupersetDatasetType.VIRTUAL.name(), SupersetDatasetSyncState.SUCCESS.name(),
+                        new Date(5000L)),
                 buildRegistryRecord(10L, null, SupersetDatasetSourceType.SEMANTIC_DATASET.name(),
-                        SupersetDatasetType.VIRTUAL.name(),
-                        SupersetDatasetSyncState.SUCCESS.name(), new Date(6000L))));
+                        SupersetDatasetType.VIRTUAL.name(), SupersetDatasetSyncState.SUCCESS.name(),
+                        new Date(6000L))));
 
         List<SupersetDatasetDO> records = service.listAvailablePersistentDatasets(10L);
 
@@ -230,17 +230,17 @@ public class SupersetDatasetRegistryServiceImplTest {
 
     private SemanticParseInfo buildParseInfo() {
         SemanticParseInfo parseInfo = new SemanticParseInfo();
-        parseInfo.setDimensions(new LinkedHashSet<>(Collections.singletonList(
-                SchemaElement.builder().name("部门").bizName("department")
+        parseInfo.setDimensions(new LinkedHashSet<>(
+                Collections.singletonList(SchemaElement.builder().name("部门").bizName("department")
                         .type(SchemaElementType.DIMENSION).description("部门").build())));
         parseInfo.setMetrics(new LinkedHashSet<>(Collections.singletonList(
-                SchemaElement.builder().name("总访问次数").bizName("pv")
-                        .type(SchemaElementType.METRIC).defaultAgg("SUM")
-                        .description("总访问次数").build())));
+                SchemaElement.builder().name("总访问次数").bizName("pv").type(SchemaElementType.METRIC)
+                        .defaultAgg("SUM").description("总访问次数").build())));
         return parseInfo;
     }
 
-    private QueryColumn buildQueryColumn(String bizName, String type, String name, String showType) {
+    private QueryColumn buildQueryColumn(String bizName, String type, String name,
+            String showType) {
         QueryColumn queryColumn = new QueryColumn();
         queryColumn.setBizName(bizName);
         queryColumn.setType(type);
@@ -250,8 +250,7 @@ public class SupersetDatasetRegistryServiceImplTest {
     }
 
     private String buildTopMetricSql() {
-        return "SELECT department, pv AS _总访问次数, "
-                + "RANK() OVER (ORDER BY pv DESC) AS _排名 "
+        return "SELECT department, pv AS _总访问次数, " + "RANK() OVER (ORDER BY pv DESC) AS _排名 "
                 + "FROM (SELECT department, SUM(pv) AS pv FROM s2 "
                 + "WHERE ds >= '2026-02-01' GROUP BY department) ranked";
     }
@@ -263,10 +262,8 @@ public class SupersetDatasetRegistryServiceImplTest {
                 + "ON t2.user_name = t3.user_name), "
                 + "department_visits AS (SELECT department, count(1) AS _总访问次数 "
                 + "FROM t_1 WHERE imp_date >= '2026-02-14' AND imp_date <= '2026-03-15' "
-                + "GROUP BY department), "
-                + "ranked_departments AS (SELECT department, _总访问次数, "
-                + "ROW_NUMBER() OVER (ORDER BY _总访问次数 DESC) AS _排名 "
-                + "FROM department_visits) "
+                + "GROUP BY department), " + "ranked_departments AS (SELECT department, _总访问次数, "
+                + "ROW_NUMBER() OVER (ORDER BY _总访问次数 DESC) AS _排名 " + "FROM department_visits) "
                 + "SELECT department, _总访问次数, _排名 "
                 + "FROM ranked_departments WHERE _排名 <= 3 ORDER BY _排名 LIMIT 1000";
     }

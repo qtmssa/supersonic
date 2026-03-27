@@ -151,8 +151,8 @@ public class OnePassSCSqlGenStrategy extends SqlGenStrategy {
         }
         ChatApp resolved = ChatAppManager.getApp(APP_KEY).map(this::copyChatApp)
                 .orElseGet(() -> ChatApp.builder().prompt(INSTRUCTION).name("语义SQL解析")
-                        .appModule(AppModule.CHAT).description("通过大模型做语义解析生成S2SQL")
-                        .enable(true).build());
+                        .appModule(AppModule.CHAT).description("通过大模型做语义解析生成S2SQL").enable(true)
+                        .build());
         if (configured == null) {
             return resolved;
         }
@@ -182,8 +182,8 @@ public class OnePassSCSqlGenStrategy extends SqlGenStrategy {
         if (chatApp != null && !StringUtils.isBlank(chatApp.getPrompt())) {
             return chatApp.getPrompt();
         }
-        return ChatAppManager.getApp(APP_KEY).map(ChatApp::getPrompt).filter(StringUtils::isNotBlank)
-                .orElse(INSTRUCTION);
+        return ChatAppManager.getApp(APP_KEY).map(ChatApp::getPrompt)
+                .filter(StringUtils::isNotBlank).orElse(INSTRUCTION);
     }
 
     private ChatApp copyChatApp(ChatApp source) {

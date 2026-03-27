@@ -106,8 +106,8 @@ public class SupersetChartProcessorTest {
         SupersetChartProcessor processor = new SupersetChartProcessor();
         SupersetPluginConfig config = buildConfig();
         SemanticParseInfo parseInfo = new SemanticParseInfo();
-        parseInfo.getMetrics().add(SchemaElement.builder().bizName("amount").name("金额")
-                .defaultAgg("SUM").build());
+        parseInfo.getMetrics().add(
+                SchemaElement.builder().bizName("amount").name("金额").defaultAgg("SUM").build());
         parseInfo.getDimensions()
                 .add(SchemaElement.builder().bizName("category").name("品类").build());
         SupersetDatasetInfo datasetInfo = new SupersetDatasetInfo();
@@ -152,8 +152,8 @@ public class SupersetChartProcessorTest {
         SupersetChartProcessor processor = new SupersetChartProcessor();
         SupersetPluginConfig config = buildConfig();
         SemanticParseInfo parseInfo = new SemanticParseInfo();
-        parseInfo.getMetrics().add(SchemaElement.builder().bizName("amount").name("金额")
-                .defaultAgg("SUM").build());
+        parseInfo.getMetrics().add(
+                SchemaElement.builder().bizName("amount").name("金额").defaultAgg("SUM").build());
         parseInfo.getDimensions().add(SchemaElement.builder().bizName("ds").name("日期").build());
         parseInfo.getDimensions()
                 .add(SchemaElement.builder().bizName("category").name("品类").build());
@@ -340,10 +340,10 @@ public class SupersetChartProcessorTest {
         SemanticParseInfo parseInfo = new SemanticParseInfo();
         parseInfo.setLimit(3L);
         parseInfo.setDateInfo(buildDateConf("imp_date", "2026-02-14", "2026-03-15"));
-        parseInfo.getMetrics().add(SchemaElement.builder().bizName("pv").name("访问次数")
-                .defaultAgg("SUM").build());
-        parseInfo.getDimensions().add(SchemaElement.builder().bizName("department").name("部门")
-                .build());
+        parseInfo.getMetrics()
+                .add(SchemaElement.builder().bizName("pv").name("访问次数").defaultAgg("SUM").build());
+        parseInfo.getDimensions()
+                .add(SchemaElement.builder().bizName("department").name("部门").build());
         parseInfo.getOrders().add(new Order("pv", "DESC"));
         SupersetDatasetInfo datasetInfo = new SupersetDatasetInfo();
         datasetInfo.setMainDttmCol("imp_date");
@@ -352,8 +352,8 @@ public class SupersetChartProcessorTest {
                 buildColumn("pv", "BIGINT", false, false)));
         datasetInfo.setMetrics(Collections.singletonList(buildMetric("pv")));
 
-        Map<String, Object> formData = processor.buildFormData(config, parseInfo, null, datasetInfo,
-                "pie", null, null);
+        Map<String, Object> formData =
+                processor.buildFormData(config, parseInfo, null, datasetInfo, "pie", null, null);
 
         Assertions.assertEquals("aggregate", formData.get("query_mode"));
         Assertions.assertEquals(3L, formData.get("row_limit"));
@@ -378,10 +378,10 @@ public class SupersetChartProcessorTest {
                 .add(SchemaElement.builder().bizName("category").name("品类").build());
         SupersetDatasetInfo datasetInfo = new SupersetDatasetInfo();
         datasetInfo.setMainDttmCol("brand_established_time");
-        datasetInfo.setColumns(Arrays.asList(
-                buildColumn("brand_established_time", "DATE", false, true),
-                buildColumn("category", "STRING", true, false),
-                buildColumn("amount", "DECIMAL", false, false)));
+        datasetInfo.setColumns(
+                Arrays.asList(buildColumn("brand_established_time", "DATE", false, true),
+                        buildColumn("category", "STRING", true, false),
+                        buildColumn("amount", "DECIMAL", false, false)));
         datasetInfo.setMetrics(Collections.singletonList(buildMetric("amount")));
 
         Map<String, Object> formData =
@@ -400,10 +400,10 @@ public class SupersetChartProcessorTest {
         SemanticParseInfo parseInfo = new SemanticParseInfo();
         parseInfo.setLimit(500L);
         parseInfo.setDateInfo(buildDateConf("imp_date", "2026-02-15", "2026-03-16"));
-        parseInfo.getMetrics().add(SchemaElement.builder().bizName("pv").name("访问次数")
-                .defaultAgg("SUM").build());
-        parseInfo.getDimensions().add(SchemaElement.builder().bizName("department").name("部门")
-                .build());
+        parseInfo.getMetrics()
+                .add(SchemaElement.builder().bizName("pv").name("访问次数").defaultAgg("SUM").build());
+        parseInfo.getDimensions()
+                .add(SchemaElement.builder().bizName("department").name("部门").build());
         SupersetDatasetInfo datasetInfo = new SupersetDatasetInfo();
         datasetInfo.setMainDttmCol("imp_date");
         datasetInfo.setColumns(Arrays.asList(buildColumn("imp_date", "DATE", true, true),
@@ -418,9 +418,8 @@ public class SupersetChartProcessorTest {
         Mockito.when(chatModelService.getChatModel(2)).thenReturn(chatModel);
 
         ChatLanguageModel chatLanguageModel = Mockito.mock(ChatLanguageModel.class);
-        Mockito.when(chatLanguageModel.generate(Mockito.any(ChatMessage.class)))
-                .thenReturn(Response.from(
-                        AiMessage.from("{\"metrics\":[\"pv\"],\"groupbyRows\":[\"department\"]}")));
+        Mockito.when(chatLanguageModel.generate(Mockito.any(ChatMessage.class))).thenReturn(Response
+                .from(AiMessage.from("{\"metrics\":[\"pv\"],\"groupbyRows\":[\"department\"]}")));
 
         try (MockedStatic<ContextUtils> mockedContext = Mockito.mockStatic(ContextUtils.class);
                 MockedStatic<ModelProvider> mockedModelProvider =
@@ -487,9 +486,9 @@ public class SupersetChartProcessorTest {
             mocked.when(() -> ContextUtils.getBean(SupersetDatasetRegistryService.class))
                     .thenReturn(registryService);
 
-            SupersetDatasetInfo resolved = invokeResolveSupersetDataset(processor,
-                    buildPersistentExecuteContext(9L), buildQuerySql(),
-                    buildAliasedQueryResult("_总访问次数"));
+            SupersetDatasetInfo resolved =
+                    invokeResolveSupersetDataset(processor, buildPersistentExecuteContext(9L),
+                            buildQuerySql(), buildAliasedQueryResult("_总访问次数"));
 
             Assertions.assertSame(persistentDataset, resolved);
             Mockito.verify(syncService).resolveDatasetInfo(candidate);
@@ -613,8 +612,8 @@ public class SupersetChartProcessorTest {
             mocked.when(() -> ContextUtils.getBean(SupersetDatasetRegistryService.class))
                     .thenReturn(registryService);
 
-            SupersetDatasetInfo resolved = invokeResolveSupersetDataset(processor, executeContext,
-                    sql, queryResult);
+            SupersetDatasetInfo resolved =
+                    invokeResolveSupersetDataset(processor, executeContext, sql, queryResult);
 
             Assertions.assertSame(fallbackDataset, resolved);
             Mockito.verify(syncService).resolveDatasetInfo(candidate);
@@ -717,8 +716,8 @@ public class SupersetChartProcessorTest {
                 QueryResult.class, SupersetDatasetInfo.class);
         method.setAccessible(true);
         @SuppressWarnings("unchecked")
-        List<Object> requests = (List<Object>) method.invoke(processor, candidates,
-                "各品牌历年收入趋势_9", config, executeContext, queryResult, datasetInfo);
+        List<Object> requests = (List<Object>) method.invoke(processor, candidates, "各品牌历年收入趋势_9",
+                config, executeContext, queryResult, datasetInfo);
 
         Assertions.assertEquals(4, requests.size());
         Assertions.assertEquals("echarts_timeseries_line",
@@ -833,9 +832,10 @@ public class SupersetChartProcessorTest {
 
     private QueryResult buildAliasedQueryResult(String metricAlias) {
         QueryResult queryResult = new QueryResult();
-        queryResult.setQueryColumns(Arrays.asList(new QueryColumn("department", "STRING", "department"),
-                new QueryColumn(metricAlias, "BIGINT", metricAlias),
-                new QueryColumn("_排名", "BIGINT", "_排名")));
+        queryResult.setQueryColumns(
+                Arrays.asList(new QueryColumn("department", "STRING", "department"),
+                        new QueryColumn(metricAlias, "BIGINT", metricAlias),
+                        new QueryColumn("_排名", "BIGINT", "_排名")));
         return queryResult;
     }
 

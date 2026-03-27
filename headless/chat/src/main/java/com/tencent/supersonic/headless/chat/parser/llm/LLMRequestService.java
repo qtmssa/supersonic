@@ -47,7 +47,8 @@ public class LLMRequestService {
             llmSchema.setDimensions(getDataSetDimensions(dataSetSchema, queryCtx, dataSetId));
         } else {
             llmSchema.setMetrics(CollectionUtils.isEmpty(mappedMetrics)
-                    ? getDataSetMetrics(dataSetSchema, queryCtx, dataSetId) : mappedMetrics);
+                    ? getDataSetMetrics(dataSetSchema, queryCtx, dataSetId)
+                    : mappedMetrics);
             llmSchema.setDimensions(CollectionUtils.isEmpty(mappedDimensions)
                     ? getDataSetDimensions(dataSetSchema, queryCtx, dataSetId)
                     : mappedDimensions);

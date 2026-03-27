@@ -20,7 +20,7 @@ const SimilarQuestions: React.FC<Props> = ({
   const [similarQuestions, setSimilarQuestions] = useState<SimilarQuestionType[]>(
     similarQueries || []
   );
-  const [expanded, setExpanded] = useState(defaultExpanded || false);
+  const [expanded, setExpanded] = useState(defaultExpanded ?? true);
   const [loading, setLoading] = useState(false);
 
   const tipPrefixCls = `${PREFIX_CLS}-item`;
@@ -28,16 +28,23 @@ const SimilarQuestions: React.FC<Props> = ({
 
   const initData = async () => {
     setLoading(true);
-    const res = await querySimilarQuestions(queryId!);
-    setLoading(false);
-    setSimilarQuestions(res.data?.similarQueries || []);
+    try {
+      const res = await querySimilarQuestions(queryId!);
+      setSimilarQuestions(res.data?.similarQueries || []);
+    } finally {
+      setLoading(false);
+    }
   };
+
+  useEffect(() => {
+    setSimilarQuestions(similarQueries || []);
+  }, [similarQueries]);
 
   useEffect(() => {
     if (expanded && similarQuestions?.length === 0 && queryId) {
       initData();
     }
-  }, [expanded, queryId]);
+  }, [expanded, queryId, similarQuestions?.length]);
 
   const onToggleExpanded = () => {
     setExpanded(!expanded);
