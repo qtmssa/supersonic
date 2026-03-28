@@ -30,14 +30,14 @@ cd webapp
 # Install dependencies
 pnpm install
 
+# Prepare Umi temp files when dev/build reports missing src/.umi/umi.ts
+pnpm --filter supersonic-fe postinstall
+
 # Start dev server (port 9000)
-pnpm dev
+pnpm --filter supersonic-fe start:osdev
 
-# Production build
-pnpm build
-
-# Run tests
-pnpm test
+# Production-like local build smoke
+pnpm --filter supersonic-fe build:os-local
 ```
 
 **Requirements:** Node.js >=16, pnpm 9.12.3+
@@ -48,14 +48,25 @@ pnpm test
 # Build full release
 ./assembly/bin/supersonic-build.sh standalone
 
-# Start service
+# Start durable local service under systemd --user (preferred for CLI sessions)
+./assembly/bin/supersonic-systemd.sh start
+./assembly/bin/supersonic-systemd.sh status
+./assembly/bin/supersonic-systemd.sh logs
+./assembly/bin/supersonic-systemd.sh stop
+
+# Start short-lived validation only
 ./assembly/bin/supersonic-daemon.sh start
 
-# Stop service
+# Stop short-lived daemon service
 ./assembly/bin/supersonic-daemon.sh stop
 ```
 
 Visit http://localhost:9080 after startup.
+
+Runtime notes:
+- `assembly/bin/supersonic-daemon.sh` now auto-prepares `assembly/runtime/<app_name>` from `launchers/<service>/target/*-bin.tar.gz` and loads `supersonic/.env` when present.
+- `assembly/bin/supersonic-systemd.sh` is the preferred durable launcher for local CLI sessions; it manages the Java process with `systemd --user` and supports `start|stop|restart|status|logs`.
+- In short-lived CLI shells, bare background startup may still be reaped after the command returns. For a durable local service, prefer a real supervisor such as `systemd --user`, or keep the Java process in a foreground session.
 
 ## Architecture Overview
 
@@ -102,7 +113,7 @@ supersonic/
 
 **Java tests:** JUnit 5, Mockito. Located in `src/test/java/` of each module.
 
-**Frontend tests:** Jest with Puppeteer environment in `webapp/packages/supersonic-fe/`
+**Frontend verification:** `bash scripts/smoke.sh frontend` currently uses `build:os-local` as the stable smoke path. If dev/build reports missing `src/.umi/umi.ts`, run `pnpm --filter supersonic-fe postinstall` before restarting the dev server. The old Jest/Puppeteer entry in `webapp/packages/supersonic-fe/` is not a reliable default until its missing `tests/` assets are restored.
 
 **Evaluation scripts:** Python scripts in `evaluation/` directory for Text2SQL accuracy testing.
 
