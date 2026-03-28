@@ -39,6 +39,16 @@ const SimilarQuestions: React.FC<Props> = ({
     }
   };
 
+  const scheduleRetry = (requestVersion: number) => {
+    if (retryCountRef.current < MAX_EMPTY_RETRY_COUNT) {
+      retryCountRef.current += 1;
+      clearRetryTimer();
+      retryTimerRef.current = window.setTimeout(() => {
+        initData(requestVersion);
+      }, RETRY_DELAY_MS);
+    }
+  };
+
   const initData = async (requestVersion = requestVersionRef.current) => {
     setLoading(true);
     try {
@@ -55,13 +65,17 @@ const SimilarQuestions: React.FC<Props> = ({
       }
       // Similar questions are written asynchronously on the backend, so retry briefly
       // before showing an empty state permanently.
-      if (retryCountRef.current < MAX_EMPTY_RETRY_COUNT) {
-        retryCountRef.current += 1;
-        clearRetryTimer();
-        retryTimerRef.current = window.setTimeout(() => {
-          initData(requestVersion);
-        }, RETRY_DELAY_MS);
+      scheduleRetry(requestVersion);
+    } catch {
+      if (requestVersion !== requestVersionRef.current) {
+        return;
       }
+      setSimilarQuestions([]);
+      if (!queryId || !expanded) {
+        clearRetryTimer();
+        return;
+      }
+      scheduleRetry(requestVersion);
     } finally {
       if (requestVersion === requestVersionRef.current) {
         setLoading(false);

@@ -62,7 +62,9 @@ describe('SimilarQuestionItem', () => {
     );
 
     expect(await screen.findByText('1. 按品牌看近30天销售额')).toBeInTheDocument();
-    await userEvent.click(screen.getByText('up'));
+    await act(async () => {
+      userEvent.click(screen.getByText('up'));
+    });
     expect(screen.queryByText('1. 按品牌看近30天销售额')).not.toBeInTheDocument();
   });
 
@@ -92,6 +94,38 @@ describe('SimilarQuestionItem', () => {
       expect(mockQuerySimilarQuestions).toHaveBeenCalledTimes(1);
     });
     expect(screen.getByText('暂无推荐')).toBeInTheDocument();
+
+    await act(async () => {
+      jest.advanceTimersByTime(1000);
+    });
+
+    await waitFor(() => {
+      expect(mockQuerySimilarQuestions).toHaveBeenCalledTimes(2);
+    });
+    expect(await screen.findByText('1. 按品牌看近30天销售额')).toBeInTheDocument();
+  });
+
+  test('retries after a transient fetch failure and eventually shows suggestions', async () => {
+    jest.useFakeTimers();
+    mockQuerySimilarQuestions
+      .mockRejectedValueOnce(new Error('temporary network error'))
+      .mockResolvedValueOnce({
+        data: {
+          similarQueries: [{ queryText: '按品牌看近30天销售额', queryId: 2, parseId: 0 }],
+        },
+      });
+
+    render(
+      <SimilarQuestionItem
+        queryId={1}
+        similarQueries={[]}
+        onSelectQuestion={jest.fn()}
+      />
+    );
+
+    await waitFor(() => {
+      expect(mockQuerySimilarQuestions).toHaveBeenCalledTimes(1);
+    });
 
     await act(async () => {
       jest.advanceTimersByTime(1000);
