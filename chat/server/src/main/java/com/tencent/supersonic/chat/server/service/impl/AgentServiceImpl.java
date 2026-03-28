@@ -189,7 +189,8 @@ public class AgentServiceImpl extends ServiceImpl<AgentDOMapper, AgentDO> implem
         BeanUtils.copyProperties(agent, agentDO);
         agentDO.setToolConfig(agent.getToolConfig());
         agentDO.setExamples(JsonUtil.toString(agent.getExamples()));
-        agentDO.setChatModelConfig(JsonUtil.toString(normalizeChatAppConfigs(agent.getChatAppConfig())));
+        agentDO.setChatModelConfig(
+                JsonUtil.toString(normalizeChatAppConfigs(agent.getChatAppConfig())));
         agentDO.setVisualConfig(JsonUtil.toString(agent.getVisualConfig()));
         agentDO.setAdmin(JsonUtil.toString(agent.getAdmins()));
         agentDO.setViewer(JsonUtil.toString(agent.getViewers()));
@@ -208,8 +209,7 @@ public class AgentServiceImpl extends ServiceImpl<AgentDOMapper, AgentDO> implem
         }
         Map<String, ChatApp> merged = new LinkedHashMap<>();
         configuredApps.forEach((key, configuredApp) -> {
-            ChatApp defaultApp =
-                    ChatAppManager.getAllApps(AppModule.CHAT).get(key);
+            ChatApp defaultApp = ChatAppManager.getAllApps(AppModule.CHAT).get(key);
             merged.put(key, mergeChatApp(defaultApp, configuredApp));
         });
         return merged;

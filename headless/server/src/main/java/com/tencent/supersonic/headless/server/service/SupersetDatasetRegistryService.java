@@ -1,8 +1,8 @@
 package com.tencent.supersonic.headless.server.service;
 
 import com.github.pagehelper.PageInfo;
-import com.tencent.supersonic.common.pojo.User;
 import com.tencent.supersonic.common.pojo.QueryColumn;
+import com.tencent.supersonic.common.pojo.User;
 import com.tencent.supersonic.headless.api.pojo.SemanticParseInfo;
 import com.tencent.supersonic.headless.api.pojo.request.SupersetDatasetQueryReq;
 import com.tencent.supersonic.headless.api.pojo.response.SupersetDatasetResp;

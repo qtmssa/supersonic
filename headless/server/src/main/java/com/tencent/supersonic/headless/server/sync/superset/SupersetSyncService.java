@@ -1,7 +1,7 @@
 package com.tencent.supersonic.headless.server.sync.superset;
 
-import com.tencent.supersonic.common.pojo.User;
 import com.tencent.supersonic.common.pojo.QueryColumn;
+import com.tencent.supersonic.common.pojo.User;
 import com.tencent.supersonic.common.pojo.enums.EngineType;
 import com.tencent.supersonic.common.util.JsonUtil;
 import com.tencent.supersonic.headless.api.pojo.SemanticParseInfo;
@@ -89,8 +89,8 @@ public class SupersetSyncService {
                 || StringUtils.isBlank(properties.getBaseUrl())) {
             return null;
         }
-        SupersetDatasetDO record = registryService.registerDataset(parseInfo, sql, queryColumns,
-                user);
+        SupersetDatasetDO record =
+                registryService.registerDataset(parseInfo, sql, queryColumns, user);
         if (record == null) {
             return null;
         }

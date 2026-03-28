@@ -17,14 +17,13 @@ import java.util.Map;
 class OnePassSCSqlGenStrategyTest {
 
     @Test
-    void resolveChatAppShouldFallbackToDefaultPromptWhenConfiguredPromptBlank()
-            throws Exception {
+    void resolveChatAppShouldFallbackToDefaultPromptWhenConfiguredPromptBlank() throws Exception {
         OnePassSCSqlGenStrategy strategy = new OnePassSCSqlGenStrategy();
         setPromptHelper(strategy, new StubPromptHelper());
 
         ChatModelConfig chatModelConfig = new ChatModelConfig();
-        ChatApp configured = ChatApp.builder().enable(true).chatModelId(9).chatModelConfig(
-                chatModelConfig).prompt("").name("自定义解析器").build();
+        ChatApp configured = ChatApp.builder().enable(true).chatModelId(9)
+                .chatModelConfig(chatModelConfig).prompt("").name("自定义解析器").build();
         LLMReq llmReq = new LLMReq();
         llmReq.setQueryText("过去30天访问次数最高的部门top3");
         llmReq.setDynamicExemplars(Collections.emptyList());
@@ -48,7 +47,8 @@ class OnePassSCSqlGenStrategyTest {
         ChatAppManager.register(OnePassSCSqlGenStrategy.APP_KEY,
                 ChatApp.builder().prompt("DEFAULT_PROMPT").enable(true).build());
 
-        String promptTemplate = strategy.resolvePromptTemplate(ChatApp.builder().prompt("").build());
+        String promptTemplate =
+                strategy.resolvePromptTemplate(ChatApp.builder().prompt("").build());
 
         Assertions.assertEquals("DEFAULT_PROMPT", promptTemplate);
     }

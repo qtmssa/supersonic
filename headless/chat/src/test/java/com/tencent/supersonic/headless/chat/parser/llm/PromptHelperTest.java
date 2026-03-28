@@ -46,8 +46,7 @@ class PromptHelperTest {
             if (ParserConfig.PARSER_FEW_SHOT_NUMBER.getName().equals(parameter.getName())) {
                 return "0";
             }
-            if (ParserConfig.PARSER_SELF_CONSISTENCY_NUMBER.getName()
-                    .equals(parameter.getName())) {
+            if (ParserConfig.PARSER_SELF_CONSISTENCY_NUMBER.getName().equals(parameter.getName())) {
                 return "2";
             }
             return parameter.getDefaultValue();

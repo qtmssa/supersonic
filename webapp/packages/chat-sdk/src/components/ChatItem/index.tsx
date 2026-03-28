@@ -584,7 +584,7 @@ const ChatItem: React.FC<Props> = ({
               parseInfo?.queryMode !== 'PLAIN_TEXT' && (
                 <SimilarQuestionItem
                   queryId={parseInfo?.queryId}
-                  defaultExpanded={parseTip !== '' || executeTip !== ''}
+                  defaultExpanded
                   similarQueries={data?.similarQueries}
                   onSelectQuestion={onSelectQuestion}
                 />

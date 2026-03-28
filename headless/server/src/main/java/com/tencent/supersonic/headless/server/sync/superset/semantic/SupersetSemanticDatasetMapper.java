@@ -6,6 +6,7 @@ import com.tencent.supersonic.common.pojo.enums.EngineType;
 import com.tencent.supersonic.common.util.JsonUtil;
 import com.tencent.supersonic.common.util.MD5Util;
 import com.tencent.supersonic.headless.api.pojo.MetaFilter;
+import com.tencent.supersonic.headless.api.pojo.enums.MetricDefineType;
 import com.tencent.supersonic.headless.api.pojo.request.QuerySqlReq;
 import com.tencent.supersonic.headless.api.pojo.response.DataSetResp;
 import com.tencent.supersonic.headless.api.pojo.response.DatabaseResp;
@@ -13,7 +14,6 @@ import com.tencent.supersonic.headless.api.pojo.response.DimensionResp;
 import com.tencent.supersonic.headless.api.pojo.response.MetricResp;
 import com.tencent.supersonic.headless.api.pojo.response.ModelResp;
 import com.tencent.supersonic.headless.api.pojo.response.SemanticTranslateResp;
-import com.tencent.supersonic.headless.api.pojo.enums.MetricDefineType;
 import com.tencent.supersonic.headless.server.facade.service.SemanticLayerService;
 import com.tencent.supersonic.headless.server.service.DataSetService;
 import com.tencent.supersonic.headless.server.service.DatabaseService;
@@ -249,11 +249,10 @@ public class SupersetSemanticDatasetMapper {
     }
 
     private Set<String> extractDependencyFields(String expr, String currentMetricKey,
-            MetricDefineType defineType,
-            Map<String, MetricResp> metricsByBizName) {
-        return extractExpressionFields(expr).stream()
-                .filter(token -> !shouldIgnoreMetricReference(token, currentMetricKey, defineType,
-                        metricsByBizName))
+            MetricDefineType defineType, Map<String, MetricResp> metricsByBizName) {
+        return extractExpressionFields(expr)
+                .stream().filter(token -> !shouldIgnoreMetricReference(token, currentMetricKey,
+                        defineType, metricsByBizName))
                 .collect(Collectors.toCollection(LinkedHashSet::new));
     }
 
@@ -316,8 +315,8 @@ public class SupersetSemanticDatasetMapper {
         if (!metricsByBizName.containsKey(key)) {
             return false;
         }
-        if (!MetricDefineType.METRIC.equals(defineType) && StringUtils.equals(key,
-                currentMetricKey)) {
+        if (!MetricDefineType.METRIC.equals(defineType)
+                && StringUtils.equals(key, currentMetricKey)) {
             return false;
         }
         return true;

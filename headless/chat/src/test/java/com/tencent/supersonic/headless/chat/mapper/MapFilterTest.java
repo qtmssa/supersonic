@@ -21,10 +21,10 @@ class MapFilterTest {
         request.setDataSetIds(Sets.newHashSet(2L));
 
         ChatQueryContext queryCtx = new ChatQueryContext(request);
-        queryCtx.getMapInfo().setMatchedElements(2L, new ArrayList<>(List.of(
-                match(dataset(2L, "企业数据集"), 0.9, true),
-                match(metric(2L, 9L, "利润"), 0.9, true),
-                match(dimension(2L, 14L, "品牌名称"), 0.9, true))));
+        queryCtx.getMapInfo().setMatchedElements(2L,
+                new ArrayList<>(List.of(match(dataset(2L, "企业数据集"), 0.9, true),
+                        match(metric(2L, 9L, "利润"), 0.9, true),
+                        match(dimension(2L, 14L, "品牌名称"), 0.9, true))));
 
         MapFilter.filter(queryCtx);
 

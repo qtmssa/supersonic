@@ -2,6 +2,7 @@ package com.tencent.supersonic.chat.server.processor.parse;
 
 import com.alibaba.fastjson.JSONObject;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
+import com.tencent.supersonic.chat.api.pojo.response.QueryResp;
 import com.tencent.supersonic.chat.api.pojo.response.SimilarQueryRecallResp;
 import com.tencent.supersonic.chat.server.persistence.dataobject.ChatQueryDO;
 import com.tencent.supersonic.chat.server.persistence.repository.ChatQueryRepository;
@@ -14,6 +15,7 @@ import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
@@ -22,6 +24,10 @@ import java.util.stream.Collectors;
  **/
 @Slf4j
 public class QueryRecommendProcessor implements ParseResultProcessor {
+
+    private static final int SIMILAR_QUERY_LIMIT = 5;
+
+    private final SimilarQueryGenerator similarQueryGenerator = new SimilarQueryGenerator();
 
     @Override
     public boolean accept(ParseContext parseContext) {
@@ -36,32 +42,45 @@ public class QueryRecommendProcessor implements ParseResultProcessor {
     @SneakyThrows
     private void doProcess(ParseContext parseContext) {
         Long queryId = parseContext.getResponse().getQueryId();
-        List<SimilarQueryRecallResp> solvedQueries = getSimilarQueries(
-                parseContext.getRequest().getQueryText(), parseContext.getAgent().getId());
-        ChatQueryDO chatQueryDO = getChatQuery(queryId);
-        chatQueryDO.setSimilarQueries(JSONObject.toJSONString(solvedQueries));
-        updateChatQuery(chatQueryDO);
+        try {
+            List<Text2SQLExemplar> recalledExemplars = recallSimilarExemplars(
+                    parseContext.getRequest().getQueryText(), parseContext.getAgent().getId());
+            List<String> historyQueries = getHistoryQueries(parseContext, queryId);
+            List<SimilarQueryRecallResp> solvedQueries =
+                    similarQueryGenerator.generate(parseContext.getRequest().getQueryText(),
+                            recalledExemplars, historyQueries, SIMILAR_QUERY_LIMIT);
+            updateChatQuery(queryId, solvedQueries);
+        } catch (Exception e) {
+            log.warn("Failed to generate similar queries, queryId={}", queryId, e);
+        }
     }
 
-    public List<SimilarQueryRecallResp> getSimilarQueries(String queryText, Integer agentId) {
+    public List<Text2SQLExemplar> recallSimilarExemplars(String queryText, Integer agentId) {
         ExemplarService exemplarService = ContextUtils.getBean(ExemplarService.class);
         EmbeddingConfig embeddingConfig = ContextUtils.getBean(EmbeddingConfig.class);
         String memoryCollectionName = embeddingConfig.getMemoryCollectionName(agentId);
-        List<Text2SQLExemplar> exemplars =
-                exemplarService.recallExemplars(memoryCollectionName, queryText, 5);
-        return exemplars.stream().map(sqlExemplar -> SimilarQueryRecallResp.builder()
-                .queryText(sqlExemplar.getQuestion()).build()).collect(Collectors.toList());
+        return exemplarService.recallExemplars(memoryCollectionName, queryText,
+                SIMILAR_QUERY_LIMIT);
     }
 
-    private ChatQueryDO getChatQuery(Long queryId) {
+    private List<String> getHistoryQueries(ParseContext parseContext, Long currentQueryId) {
         ChatQueryRepository chatQueryRepository = ContextUtils.getBean(ChatQueryRepository.class);
-        return chatQueryRepository.getChatQueryDO(queryId);
+        Integer chatId = parseContext.getRequest().getChatId();
+        if (chatId == null) {
+            return List.of();
+        }
+        return chatQueryRepository.getChatQueries(chatId).stream().filter(Objects::nonNull)
+                .filter(query -> !Objects.equals(query.getQuestionId(), currentQueryId))
+                .map(QueryResp::getQueryText)
+                .filter(org.apache.commons.lang3.StringUtils::isNotBlank)
+                .collect(Collectors.toList());
     }
 
-    private void updateChatQuery(ChatQueryDO chatQueryDO) {
+    private void updateChatQuery(Long queryId, List<SimilarQueryRecallResp> similarQueries) {
         ChatQueryRepository chatQueryRepository = ContextUtils.getBean(ChatQueryRepository.class);
         UpdateWrapper<ChatQueryDO> updateWrapper = new UpdateWrapper<>();
-        updateWrapper.lambda().eq(ChatQueryDO::getQuestionId, chatQueryDO.getQuestionId());
-        chatQueryRepository.updateChatQuery(chatQueryDO, updateWrapper);
+        updateWrapper.lambda().eq(ChatQueryDO::getQuestionId, queryId)
+                .set(ChatQueryDO::getSimilarQueries, JSONObject.toJSONString(similarQueries));
+        chatQueryRepository.updateChatQuery(new ChatQueryDO(), updateWrapper);
     }
 }

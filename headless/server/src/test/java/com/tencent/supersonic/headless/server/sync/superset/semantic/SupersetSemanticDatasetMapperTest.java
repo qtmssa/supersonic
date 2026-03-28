@@ -37,12 +37,13 @@ public class SupersetSemanticDatasetMapperTest {
 
     @Test
     public void buildMappingShouldExposeAtomicMetricColumnsAndAggregateExpressions() {
-        SupersetSemanticDatasetMapper mapper = buildMapper(
-                List.of(buildDimension(101L, "brand_name", "品牌名称")),
-                List.of(buildMeasureMetric(201L, "revenue", "营收", "SUM"),
-                        buildMeasureMetric(202L, "registered_capital", "注册资本", "MAX")));
+        SupersetSemanticDatasetMapper mapper =
+                buildMapper(List.of(buildDimension(101L, "brand_name", "品牌名称")),
+                        List.of(buildMeasureMetric(201L, "revenue", "营收", "SUM"),
+                                buildMeasureMetric(202L, "registered_capital", "注册资本", "MAX")));
 
-        SemanticDatasetMapping mapping = mapper.buildMapping(buildDataSetResp(), User.getDefaultUser());
+        SemanticDatasetMapping mapping =
+                mapper.buildMapping(buildDataSetResp(), User.getDefaultUser());
 
         Assertions.assertNotNull(mapping);
         Assertions.assertEquals("SELECT brand_name, revenue, registered_capital FROM t_2",
@@ -68,11 +69,12 @@ public class SupersetSemanticDatasetMapperTest {
         MetricResp margin = buildDerivedMetric(203L, "profit_margin", "利润率", "profit / revenue",
                 List.of(new MetricParam(202L, "profit"), new MetricParam(201L, "revenue")));
 
-        SupersetSemanticDatasetMapper mapper = buildMapper(
-                List.of(buildDimension(101L, "brand_name", "品牌名称")),
-                List.of(revenue, profit, margin));
+        SupersetSemanticDatasetMapper mapper =
+                buildMapper(List.of(buildDimension(101L, "brand_name", "品牌名称")),
+                        List.of(revenue, profit, margin));
 
-        SemanticDatasetMapping mapping = mapper.buildMapping(buildDataSetResp(), User.getDefaultUser());
+        SemanticDatasetMapping mapping =
+                mapper.buildMapping(buildDataSetResp(), User.getDefaultUser());
 
         Assertions.assertNotNull(mapping);
         Assertions.assertEquals("SELECT brand_name, revenue, profit FROM t_2",
@@ -99,17 +101,16 @@ public class SupersetSemanticDatasetMapperTest {
         model.setId(1L);
         model.setDatabaseId(11L);
 
-        DatabaseResp database = DatabaseResp.builder().id(11L).type("POSTGRESQL").schema("public")
-                .build();
+        DatabaseResp database =
+                DatabaseResp.builder().id(11L).type("POSTGRESQL").schema("public").build();
 
         Mockito.when(modelService.getModel(1L)).thenReturn(model);
         Mockito.when(databaseService.getDatabase(11L)).thenReturn(database);
         Mockito.when(dimensionService.getDimensions(Mockito.any())).thenReturn(dimensions);
         Mockito.when(metricService.getMetrics(Mockito.any())).thenReturn(metrics);
         try {
-            Mockito.when(
-                    semanticLayerService.translate(Mockito.any(QuerySqlReq.class), Mockito.any(User.class)))
-                    .thenAnswer(invocation -> {
+            Mockito.when(semanticLayerService.translate(Mockito.any(QuerySqlReq.class),
+                    Mockito.any(User.class))).thenAnswer(invocation -> {
                         QuerySqlReq req = invocation.getArgument(0);
                         return SemanticTranslateResp.builder().querySQL(req.getSql()).isOk(true)
                                 .build();
@@ -128,8 +129,8 @@ public class SupersetSemanticDatasetMapperTest {
         dataSet.setName("企业数据集");
         dataSet.setBizName("CorporateData");
         DataSetDetail detail = new DataSetDetail();
-        detail.setDataSetModelConfigs(List.of(
-                new DataSetModelConfig(1L, false, List.of(201L, 202L, 203L), List.of(101L))));
+        detail.setDataSetModelConfigs(List
+                .of(new DataSetModelConfig(1L, false, List.of(201L, 202L, 203L), List.of(101L))));
         dataSet.setDataSetDetail(detail);
         return dataSet;
     }

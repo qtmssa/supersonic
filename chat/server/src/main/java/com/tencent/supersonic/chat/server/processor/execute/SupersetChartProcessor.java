@@ -171,7 +171,8 @@ public class SupersetChartProcessor implements ExecuteResultProcessor {
         response.setPluginId(plugin.getId());
         response.setPluginType(plugin.getType());
         log.debug("superset resolve dataset input, queryId={}, queryColumns={}",
-                executeContext.getRequest() == null ? null : executeContext.getRequest().getQueryId(),
+                executeContext.getRequest() == null ? null
+                        : executeContext.getRequest().getQueryId(),
                 queryResult.getQueryColumns() == null ? Collections.emptyList()
                         : queryResult.getQueryColumns().stream().map(QueryColumn::getBizName)
                                 .collect(Collectors.toList()));
@@ -504,7 +505,8 @@ public class SupersetChartProcessor implements ExecuteResultProcessor {
                 continue;
             }
             Set<String> querySources = queryMetricSources.get(normalizeName(name));
-            if (CollectionUtils.isEmpty(querySources) || !querySources.containsAll(requiredSources)) {
+            if (CollectionUtils.isEmpty(querySources)
+                    || !querySources.containsAll(requiredSources)) {
                 incompatible.add(name);
             }
         }
@@ -571,7 +573,8 @@ public class SupersetChartProcessor implements ExecuteResultProcessor {
         if (selectItem == null) {
             return null;
         }
-        if (selectItem.getAlias() != null && StringUtils.isNotBlank(selectItem.getAlias().getName())) {
+        if (selectItem.getAlias() != null
+                && StringUtils.isNotBlank(selectItem.getAlias().getName())) {
             return selectItem.getAlias().getName().replace("`", "");
         }
         if (selectItem.getExpression() == null) {
@@ -823,7 +826,8 @@ public class SupersetChartProcessor implements ExecuteResultProcessor {
         String queryText = executeContext == null || executeContext.getRequest() == null ? null
                 : sanitizeChartName(executeContext.getRequest().getQueryText());
         String readableName = StringUtils.defaultIfBlank(queryText,
-                StringUtils.defaultIfBlank(sanitizeChartName(plugin == null ? null : plugin.getName()),
+                StringUtils.defaultIfBlank(
+                        sanitizeChartName(plugin == null ? null : plugin.getName()),
                         DEFAULT_CHART_ZH_NAME));
         return readableName + "_" + suffix;
     }
@@ -1051,8 +1055,8 @@ public class SupersetChartProcessor implements ExecuteResultProcessor {
         log.debug(
                 "superset buildFormData context, vizType={}, parseLimit={}, parseDateInfo={}, resolvedTimeColumn={}, resolvedTimeRange={}, resolvedTimeGrain={}, resolvedOrders={}, selectedColumns={}",
                 vizType, parseInfo == null ? null : parseInfo.getLimit(),
-                parseInfo == null ? null : parseInfo.getDateInfo(), context == null ? null
-                        : context.timeColumn,
+                parseInfo == null ? null : parseInfo.getDateInfo(),
+                context == null ? null : context.timeColumn,
                 context == null ? null : context.timeRange,
                 context == null ? null : context.timeGrain,
                 context == null || context.orders == null ? 0 : context.orders.size(),
@@ -1447,8 +1451,7 @@ public class SupersetChartProcessor implements ExecuteResultProcessor {
         sanitizeFieldInSet(payload, "secondary_metric", metricNames,
                 strictKeys.contains("secondary_metric"));
         sanitizeFieldListInSet(payload, "metrics", metricNames, strictKeys.contains("metrics"));
-        sanitizeFieldListInSet(payload, "metrics_b", metricNames,
-                strictKeys.contains("metrics_b"));
+        sanitizeFieldListInSet(payload, "metrics_b", metricNames, strictKeys.contains("metrics_b"));
         sanitizeFieldListInSet(payload, "tooltip_metrics", metricNames,
                 strictKeys.contains("tooltip_metrics"));
         sanitizeFieldListInSet(payload, "groupby", columnNames, strictKeys.contains("groupby"));
@@ -1718,9 +1721,8 @@ public class SupersetChartProcessor implements ExecuteResultProcessor {
         String timeColumn = resolveTimeColumn(parseInfo, datasetInfo, columnMap);
         List<String> timeColumns = resolveTimeColumns(datasetColumns, datasetInfo);
         List<String> numericColumns = resolveNumericColumns(datasetColumns);
-        List<String> selectedColumns =
-                resolveSelectedColumns(parseInfo, queryResult, columnMap, dimensionColumns,
-                        timeColumn);
+        List<String> selectedColumns = resolveSelectedColumns(parseInfo, queryResult, columnMap,
+                dimensionColumns, timeColumn);
         DateConf dateInfo = parseInfo == null ? null : parseInfo.getDateInfo();
         List<FormDataOrder> orders = resolveOrders(parseInfo, datasetInfo, columnMap);
         long rowLimit = resolveRowLimit(parseInfo);
@@ -1816,8 +1818,9 @@ public class SupersetChartProcessor implements ExecuteResultProcessor {
             return resolveAxisDisplayName(explicitAxisField, displayNameMap);
         }
         if (parseInfo != null && !CollectionUtils.isEmpty(parseInfo.getMetrics())) {
-            List<String> labels = parseInfo.getMetrics().stream().map(this::resolveReadableElementName)
-                    .filter(StringUtils::isNotBlank).distinct().collect(Collectors.toList());
+            List<String> labels = parseInfo.getMetrics().stream()
+                    .map(this::resolveReadableElementName).filter(StringUtils::isNotBlank)
+                    .distinct().collect(Collectors.toList());
             if (!labels.isEmpty()) {
                 return String.join(" / ", labels);
             }
@@ -1859,7 +1862,8 @@ public class SupersetChartProcessor implements ExecuteResultProcessor {
                     return;
                 }
             }
-            String label = resolveAxisDisplayName(toStringValue(metric.get("label")), displayNameMap);
+            String label =
+                    resolveAxisDisplayName(toStringValue(metric.get("label")), displayNameMap);
             if (StringUtils.isNotBlank(label)) {
                 labels.add(label);
             }
@@ -1890,9 +1894,10 @@ public class SupersetChartProcessor implements ExecuteResultProcessor {
             QueryResult queryResult) {
         Map<String, String> displayNameMap = new HashMap<>();
         if (parseInfo != null) {
-            registerDisplayName(displayNameMap, parseInfo.getDateInfo() == null ? null
-                    : parseInfo.getDateInfo().getDateField(),
-                    parseInfo.getDateInfo() == null ? null : parseInfo.getDateInfo().getDateField());
+            registerDisplayName(displayNameMap,
+                    parseInfo.getDateInfo() == null ? null : parseInfo.getDateInfo().getDateField(),
+                    parseInfo.getDateInfo() == null ? null
+                            : parseInfo.getDateInfo().getDateField());
             registerDisplayNames(displayNameMap, parseInfo.getDimensions());
             registerDisplayNames(displayNameMap, parseInfo.getMetrics());
         }
@@ -1901,9 +1906,9 @@ public class SupersetChartProcessor implements ExecuteResultProcessor {
                 if (queryColumn == null) {
                     continue;
                 }
-                String readableName = firstNonBlankValue(queryColumn.getName(),
-                        queryColumn.getComment(), queryColumn.getBizName(),
-                        queryColumn.getNameEn());
+                String readableName =
+                        firstNonBlankValue(queryColumn.getName(), queryColumn.getComment(),
+                                queryColumn.getBizName(), queryColumn.getNameEn());
                 registerDisplayName(displayNameMap, queryColumn.getBizName(), readableName);
                 registerDisplayName(displayNameMap, queryColumn.getNameEn(), readableName);
                 registerDisplayName(displayNameMap, queryColumn.getName(), readableName);
@@ -1934,7 +1939,8 @@ public class SupersetChartProcessor implements ExecuteResultProcessor {
 
     private void registerDisplayName(Map<String, String> displayNameMap, String rawName,
             String readableName) {
-        if (displayNameMap == null || StringUtils.isBlank(rawName) || StringUtils.isBlank(readableName)) {
+        if (displayNameMap == null || StringUtils.isBlank(rawName)
+                || StringUtils.isBlank(readableName)) {
             return;
         }
         displayNameMap.putIfAbsent(normalizeName(rawName), readableName.trim());
@@ -2827,8 +2833,8 @@ public class SupersetChartProcessor implements ExecuteResultProcessor {
         Map<String, SupersetDatasetColumn> relaxedColumnMap = buildRelaxedColumnMap(columnMap);
         return datasetInfo.getMetrics().stream()
                 .filter(metric -> isDatasetMetricExecutable(metric, columnMap, relaxedColumnMap))
-                .map(SupersetDatasetMetric::getMetricName).filter(StringUtils::isNotBlank).distinct()
-                .collect(Collectors.toList());
+                .map(SupersetDatasetMetric::getMetricName).filter(StringUtils::isNotBlank)
+                .distinct().collect(Collectors.toList());
     }
 
     private List<String> resolveFormDataMetricCandidates(SupersetDatasetInfo datasetInfo) {
@@ -2914,7 +2920,8 @@ public class SupersetChartProcessor implements ExecuteResultProcessor {
         try {
             sourceFields = SqlSelectHelper.getFieldsFromExpr(expression);
         } catch (RuntimeException ex) {
-            log.debug("superset dataset metric expression parse failed, metricName={}, expression={}",
+            log.debug(
+                    "superset dataset metric expression parse failed, metricName={}, expression={}",
                     metric.getMetricName(), expression, ex);
             return false;
         }
@@ -2935,9 +2942,9 @@ public class SupersetChartProcessor implements ExecuteResultProcessor {
         return true;
     }
 
-    private List<String> resolveSelectedColumns(SemanticParseInfo parseInfo, QueryResult queryResult,
-            Map<String, SupersetDatasetColumn> columnMap, List<String> dimensionColumns,
-            String timeColumn) {
+    private List<String> resolveSelectedColumns(SemanticParseInfo parseInfo,
+            QueryResult queryResult, Map<String, SupersetDatasetColumn> columnMap,
+            List<String> dimensionColumns, String timeColumn) {
         List<String> selected = new ArrayList<>();
         Map<String, SupersetDatasetColumn> relaxedMap = buildRelaxedColumnMap(columnMap);
         if (queryResult != null && !CollectionUtils.isEmpty(queryResult.getQueryColumns())) {
@@ -3012,21 +3019,19 @@ public class SupersetChartProcessor implements ExecuteResultProcessor {
                 datasetInfo == null ? Collections.emptyList() : datasetInfo.getMetrics(),
                 columnMap);
         List<FormDataOrder> resolved = new ArrayList<>();
-        List<Order> sourceOrders = parseInfo.getOrders().stream()
-                .sorted((left, right) -> {
-                    String leftKey = left == null ? "" : StringUtils.defaultString(left.getColumn());
-                    String rightKey =
-                            right == null ? "" : StringUtils.defaultString(right.getColumn());
-                    int compare = leftKey.compareToIgnoreCase(rightKey);
-                    if (compare != 0) {
-                        return compare;
-                    }
-                    String leftDirection =
-                            left == null ? "" : StringUtils.defaultString(left.getDirection());
-                    String rightDirection =
-                            right == null ? "" : StringUtils.defaultString(right.getDirection());
-                    return leftDirection.compareToIgnoreCase(rightDirection);
-                }).collect(Collectors.toList());
+        List<Order> sourceOrders = parseInfo.getOrders().stream().sorted((left, right) -> {
+            String leftKey = left == null ? "" : StringUtils.defaultString(left.getColumn());
+            String rightKey = right == null ? "" : StringUtils.defaultString(right.getColumn());
+            int compare = leftKey.compareToIgnoreCase(rightKey);
+            if (compare != 0) {
+                return compare;
+            }
+            String leftDirection =
+                    left == null ? "" : StringUtils.defaultString(left.getDirection());
+            String rightDirection =
+                    right == null ? "" : StringUtils.defaultString(right.getDirection());
+            return leftDirection.compareToIgnoreCase(rightDirection);
+        }).collect(Collectors.toList());
         for (Order order : sourceOrders) {
             FormDataOrder item =
                     resolveOrder(parseInfo, order, metricMap, columnMap, relaxedColumnMap);
@@ -3056,8 +3061,10 @@ public class SupersetChartProcessor implements ExecuteResultProcessor {
             SupersetDatasetColumn metricColumn =
                     resolveOrderColumn(orderColumn, columnMap, relaxedColumnMap);
             if (metricColumn != null) {
-                return new FormDataOrder(buildAdhocMetric(metricColumn,
-                        resolveMetricAggregate(parseInfo, normalizedOrder)), true, descending);
+                return new FormDataOrder(
+                        buildAdhocMetric(metricColumn,
+                                resolveMetricAggregate(parseInfo, normalizedOrder)),
+                        true, descending);
             }
         }
         SupersetDatasetColumn column = resolveOrderColumn(orderColumn, columnMap, relaxedColumnMap);
@@ -3099,7 +3106,8 @@ public class SupersetChartProcessor implements ExecuteResultProcessor {
         return columnMap.get(normalizeName(resolvedName));
     }
 
-    private String resolveMetricAggregate(SemanticParseInfo parseInfo, String normalizedMetricName) {
+    private String resolveMetricAggregate(SemanticParseInfo parseInfo,
+            String normalizedMetricName) {
         if (parseInfo == null || CollectionUtils.isEmpty(parseInfo.getMetrics())) {
             return "SUM";
         }
@@ -3394,11 +3402,12 @@ public class SupersetChartProcessor implements ExecuteResultProcessor {
             return false;
         }
         for (int i = 0; i < value.length(); i++) {
-            Character.UnicodeBlock unicodeBlock =
-                    Character.UnicodeBlock.of(value.charAt(i));
+            Character.UnicodeBlock unicodeBlock = Character.UnicodeBlock.of(value.charAt(i));
             if (Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS.equals(unicodeBlock)
-                    || Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS_EXTENSION_A.equals(unicodeBlock)
-                    || Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS_EXTENSION_B.equals(unicodeBlock)
+                    || Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS_EXTENSION_A
+                            .equals(unicodeBlock)
+                    || Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS_EXTENSION_B
+                            .equals(unicodeBlock)
                     || Character.UnicodeBlock.CJK_COMPATIBILITY_IDEOGRAPHS.equals(unicodeBlock)) {
                 return true;
             }
