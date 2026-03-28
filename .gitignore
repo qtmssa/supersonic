@@ -38,6 +38,8 @@ benchmark/res/
 
 *.class
 bin/
+!assembly/bin/
+!assembly/bin/supersonic-systemd.sh
 
 *.bak.*
 
