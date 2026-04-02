@@ -67,6 +67,7 @@ Runtime notes:
 - `assembly/bin/supersonic-daemon.sh` now auto-prepares `assembly/runtime/<app_name>` from `launchers/<service>/target/*-bin.tar.gz` and loads `supersonic/.env` when present.
 - `assembly/bin/supersonic-systemd.sh` is the preferred durable launcher for local CLI sessions; it manages the Java process with `systemd --user` and supports `start|stop|restart|status|logs`.
 - In short-lived CLI shells, bare background startup may still be reaped after the command returns. For a durable local service, prefer a real supervisor such as `systemd --user`, or keep the Java process in a foreground session.
+- For browser automation, read `TEST_RUNBOOK.md` first. It contains the verified startup path, external dependency notes, the `9080` port-collision caveat, and the recommended isolated launch pattern using `S2_INSTANCE_ID` plus `S2_SERVER_PORT`.
 
 ## Architecture Overview
 
@@ -115,6 +116,8 @@ supersonic/
 
 **Frontend verification:** `bash scripts/smoke.sh frontend` currently uses `build:os-local` as the stable smoke path. If dev/build reports missing `src/.umi/umi.ts`, run `pnpm --filter supersonic-fe postinstall` before restarting the dev server. The old Jest/Puppeteer entry in `webapp/packages/supersonic-fe/` is not a reliable default until its missing `tests/` assets are restored.
 
+**Browser automation note:** Prefer a standalone instance on an isolated port such as `9081` over the `9000` dev server. The dev server proxies `/api` to `127.0.0.1:9080`, so it can silently talk to the wrong backend if another local Supersonic instance is already bound there.
+
 **Evaluation scripts:** Python scripts in `evaluation/` directory for Text2SQL accuracy testing.
 
 ## Related Documentation
@@ -122,6 +125,7 @@ supersonic/
 - [README.md](README.md) - English documentation
 - [README_CN.md](README_CN.md) - Chinese documentation
 - [Evaluation Guide](evaluation/README.md) - Text2SQL evaluation process
+- [Browser Automation Runbook](TEST_RUNBOOK.md) - verified compile/start path for browser automation sessions
 
 # 项目的部署信息
 - 在文档 "部署信息.md" 中
