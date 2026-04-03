@@ -8,9 +8,26 @@
 
 - 默认不要直接假设 `9080` 空闲。2026-04-02 实测这台机器的 `9080` 已被另一个工作区里的 H2 版 Supersonic 占用。
 - 浏览器自动化的最稳基线不是 `9000` 前端 dev server，而是“完整构建后，用独立端口启动 standalone，再直接访问 `/webapp/login`”。
+- `supersonic` 的前后端不是一次编译出来的单体产物，而是分开编译、最后再打包整合。后续会话不要把“后端能编过”误当成“前端也已就绪”。
 - 当前仓库的 `.env` 默认走 `postgres`，不是 `h2`。数据库不可达时，当前主仓库启动链不成立。
 - `Superset` 对“图表/嵌入/同步”链路是硬依赖；对“仅打开登录页、仅做基础 UI 冒烟”不是硬依赖，但当前 `.env` 已启用相关配置，最好仍一起核可达性。
 - `mf2s2-mcp`、`dbt-mcp`、`metricsys_ai` 目前只被识别为关联仓库，不是当前仓库编译和 standalone 启动的直接硬依赖。2026-04-02 本次构建与隔离实例启动都未依赖它们。
+
+## 构建模型要先理解
+
+浏览器自动化前，先把当前仓库的构建模型理解对：
+
+- 后端编译链：`mvn -f "$projectDir" clean package -DskipTests -Dspotless.skip=true`
+- 前端编译链：`webapp/start-fe-prod.sh`，内部会先装 workspace 依赖，再编 `chat-sdk`，再编 `supersonic-fe`
+- 合包链：前端产物会被打成 `supersonic-webapp.tar.gz`，再和 `launchers/standalone/target/*-bin.tar.gz` 一起整合进最终 release 包
+
+也就是说：
+
+- `bash scripts/smoke.sh` 只证明后端最小单测链没坏
+- `bash scripts/smoke.sh frontend` 只证明前端构建链没坏
+- `./assembly/bin/supersonic-build.sh standalone` 才是“后端 + 前端都编完并打成 standalone 发布包”的整体验证
+
+如果你的目标是浏览器自动化，不要跳过前端 smoke，也不要只看后端打包日志。
 
 ## 已实测通过的最小闭环
 
@@ -29,6 +46,12 @@ bash scripts/smoke.sh frontend
 ```bash
 ./assembly/bin/supersonic-build.sh standalone
 ```
+
+这一步的真实含义不是“单次统一编译”，而是：
+
+1. 先用 Maven 编译后端各模块和 `launchers/standalone`
+2. 再单独进入 `webapp/` 跑前端生产构建
+3. 最后把前端产物和 standalone 启动包合并成发布物
 
 3. 核外部硬依赖
 
