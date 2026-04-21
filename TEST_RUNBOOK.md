@@ -9,6 +9,7 @@
 - 默认不要直接假设 `9080` 空闲。2026-04-02 实测这台机器的 `9080` 已被另一个工作区里的 H2 版 Supersonic 占用。
 - 浏览器自动化的最稳基线不是 `9000` 前端 dev server，而是“完整构建后，用独立端口启动 standalone，再直接访问 `/webapp/login`”。
 - `supersonic` 的前后端不是一次编译出来的单体产物，而是分开编译、最后再打包整合。后续会话不要把“后端能编过”误当成“前端也已就绪”。
+- 当前仓库的 bare `mvn` 已通过 `.mvn/maven.config` 固定到 workspace-local Maven repo：`supersonic/.symphony/m2/repository`。新 workspace 先跑 `bash .symphony/pre-build-workspace.sh`，后续 smoke/build 会复用同一仓库。
 - 当前仓库的 `.env` 默认走 `postgres`，不是 `h2`。数据库不可达时，当前主仓库启动链不成立。
 - `Superset` 对“图表/嵌入/同步”链路是硬依赖；对“仅打开登录页、仅做基础 UI 冒烟”不是硬依赖，但当前 `.env` 已启用相关配置，最好仍一起核可达性。
 - `mf2s2-mcp`、`dbt-mcp`、`metricsys_ai` 目前只被识别为关联仓库，不是当前仓库编译和 standalone 启动的直接硬依赖。2026-04-02 本次构建与隔离实例启动都未依赖它们。
@@ -37,6 +38,7 @@
 
 ```bash
 bash scripts/doctor.sh
+bash .symphony/pre-build-workspace.sh
 bash scripts/smoke.sh
 bash scripts/smoke.sh frontend
 ```
@@ -107,6 +109,7 @@ http://127.0.0.1:9081/webapp/login
 - 单 origin，浏览器直接打 standalone，不依赖前端 dev proxy。
 - 能避开共享服务器上已有的 `9080` 占用。
 - 能明确绑定到当前仓库刚构建出的 runtime 目录。
+- `bash .symphony/pre-build-workspace.sh` 会先把 Maven local repo 固定到 workspace 内并做依赖预热，后续 `bash scripts/smoke.sh` / `mvn ...` 不再回写 `~/.m2/repository`。
 
 ### 路径 B：前端调试路径，只在确实要看热更新时使用
 

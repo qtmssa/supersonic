@@ -46,5 +46,6 @@ bin/
 .venv/
 .env
 .run/
-.symphony/
+.symphony/*
+!.symphony/pre-build-workspace.sh
 .pnpm-home/

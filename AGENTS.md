@@ -13,6 +13,9 @@ mvn clean package -DskipTests -Dspotless.skip=true
 # Run all tests
 mvn test
 
+# Prewarm the workspace-local Maven repo and pnpm workspace first
+bash .symphony/pre-build-workspace.sh
+
 # Run single test class
 mvn test -Dtest=ClassName
 
@@ -21,6 +24,8 @@ mvn -B package --file pom.xml
 ```
 
 **Requirements:** Java 21, Maven
+
+`supersonic/.mvn/maven.config` redirects bare `mvn` invocations to `supersonic/.symphony/m2/repository`. In fresh workspaces, run `bash .symphony/pre-build-workspace.sh` first so the repo-local Maven cache and pnpm workspace are warmed before smoke/build steps.
 
 ### Frontend (pnpm/React)
 
@@ -113,6 +118,8 @@ supersonic/
 ## Testing
 
 **Java tests:** JUnit 5, Mockito. Located in `src/test/java/` of each module.
+
+**Prewarm first:** `bash .symphony/pre-build-workspace.sh` is the formal repo prewarm step. It seeds `supersonic/.symphony/m2/repository`, runs a lightweight Maven dependency warmup, and prewarms the pnpm workspace. `bash scripts/smoke.sh` will call it automatically in `backend` or `frontend` mode, but run it explicitly at the start of a fresh validation workspace.
 
 **Frontend verification:** `bash scripts/smoke.sh frontend` currently uses `build:os-local` as the stable smoke path. If dev/build reports missing `src/.umi/umi.ts`, run `pnpm --filter supersonic-fe postinstall` before restarting the dev server. The old Jest/Puppeteer entry in `webapp/packages/supersonic-fe/` is not a reliable default until its missing `tests/` assets are restored.
 
