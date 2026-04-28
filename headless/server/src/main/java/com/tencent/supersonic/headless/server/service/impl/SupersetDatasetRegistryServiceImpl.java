@@ -707,6 +707,8 @@ public class SupersetDatasetRegistryServiceImpl
             boolean isTime = isTimeField(dimensionElement, queryColumn);
             boolean numeric = metricElement != null || isNumericQueryColumn(queryColumn)
                     || isLikelyNumericExpression(selectItem.getExpression());
+            boolean auxiliaryMetric =
+                    isAuxiliaryMetricOutput(outputName, selectItem.getExpression());
             boolean groupBy =
                     metricElement == null && (isTime || dimensionElement != null || !numeric);
 
@@ -719,7 +721,7 @@ public class SupersetDatasetRegistryServiceImpl
             outputField.setDttm(isTime);
             outputField.setGroupby(groupBy);
             outputField.setFilterable(groupBy);
-            outputField.setMetricCandidate(!groupBy && numeric);
+            outputField.setMetricCandidate(!groupBy && numeric && !auxiliaryMetric);
             outputField.setMatchedMetric(metricElement != null);
             outputField.setAggregate(metricElement == null ? null : metricElement.getDefaultAgg());
             outputField.setType(isTime ? "DATE" : (numeric ? "NUMBER" : "STRING"));
@@ -739,6 +741,8 @@ public class SupersetDatasetRegistryServiceImpl
             }
             boolean isTime = isTimeQueryColumn(queryColumn);
             boolean numeric = isNumericQueryColumn(queryColumn);
+            boolean auxiliaryMetric = isAuxiliaryMetricOutput(queryColumn.getBizName(), null)
+                    || isAuxiliaryMetricOutput(queryColumn.getName(), null);
             boolean groupBy = !numeric || isTime;
             DatasetOutputField outputField = new DatasetOutputField();
             outputField.setOutputName(queryColumn.getBizName());
@@ -748,7 +752,7 @@ public class SupersetDatasetRegistryServiceImpl
             outputField.setDttm(isTime);
             outputField.setGroupby(groupBy);
             outputField.setFilterable(groupBy);
-            outputField.setMetricCandidate(!groupBy && numeric);
+            outputField.setMetricCandidate(!groupBy && numeric && !auxiliaryMetric);
             outputField.setMatchedMetric(numeric);
             outputField.setAggregate("SUM");
             outputField.setType(isTime ? "DATE" : (numeric ? "NUMBER" : "STRING"));
@@ -923,6 +927,11 @@ public class SupersetDatasetRegistryServiceImpl
             }
             addLookupEntry(lookup, element.getBizName(), element);
             addLookupEntry(lookup, element.getName(), element);
+            if (!CollectionUtils.isEmpty(element.getAlias())) {
+                for (String alias : element.getAlias()) {
+                    addLookupEntry(lookup, alias, element);
+                }
+            }
         }
         return lookup;
     }
@@ -995,16 +1004,78 @@ public class SupersetDatasetRegistryServiceImpl
             return null;
         }
         SchemaElement matched = lookup.get(normalizeName(outputName));
-        if (matched != null || CollectionUtils.isEmpty(sourceFields)) {
+        if (matched != null) {
             return matched;
         }
-        for (String sourceField : sourceFields) {
-            matched = lookup.get(normalizeName(sourceField));
-            if (matched != null) {
-                return matched;
+        if (!CollectionUtils.isEmpty(sourceFields)) {
+            for (String sourceField : sourceFields) {
+                matched = lookup.get(normalizeName(sourceField));
+                if (matched != null) {
+                    return matched;
+                }
             }
         }
-        return null;
+        Set<SchemaElement> matches = new LinkedHashSet<>();
+        collectRelaxedMatches(matches, lookup, outputName);
+        if (!CollectionUtils.isEmpty(sourceFields)) {
+            for (String sourceField : sourceFields) {
+                collectRelaxedMatches(matches, lookup, sourceField);
+            }
+        }
+        return matches.size() == 1 ? matches.iterator().next() : null;
+    }
+
+    private void collectRelaxedMatches(Set<SchemaElement> matches,
+            Map<String, SchemaElement> lookup, String candidate) {
+        if (matches == null || lookup == null || lookup.isEmpty()
+                || StringUtils.isBlank(candidate)) {
+            return;
+        }
+        String candidateToken = normalizeMatchToken(candidate);
+        if (StringUtils.isBlank(candidateToken)) {
+            return;
+        }
+        for (Map.Entry<String, SchemaElement> entry : lookup.entrySet()) {
+            if (entry == null || entry.getValue() == null) {
+                continue;
+            }
+            String lookupToken = normalizeMatchToken(entry.getKey());
+            if (isExplicitAliasTokenMatch(lookupToken, candidateToken)) {
+                matches.add(entry.getValue());
+            }
+        }
+    }
+
+    private boolean isExplicitAliasTokenMatch(String leftToken, String rightToken) {
+        if (StringUtils.isBlank(leftToken) || StringUtils.isBlank(rightToken)) {
+            return false;
+        }
+        if (leftToken.equals(rightToken)) {
+            return true;
+        }
+        return leftToken.length() > 2 && rightToken.length() > 2
+                && (leftToken.contains(rightToken) || rightToken.contains(leftToken));
+    }
+
+    private boolean isAuxiliaryMetricOutput(String outputName, Expression expression) {
+        String normalizedName = normalizeMatchToken(outputName);
+        if (StringUtils.isNotBlank(normalizedName) && (normalizedName.equals("rank")
+                || normalizedName.contains("rownumber") || normalizedName.contains("denserank")
+                || normalizedName.contains("percentrank") || normalizedName.contains("排名"))) {
+            return true;
+        }
+        if (expression == null) {
+            return false;
+        }
+        String expressionText =
+                StringUtils.lowerCase(StringUtil.replaceBackticks(expression.toString()));
+        return expressionText.contains("rank(") || expressionText.contains("row_number(")
+                || expressionText.contains("dense_rank(")
+                || expressionText.contains("percent_rank(");
+    }
+
+    private String normalizeMatchToken(String name) {
+        return normalizeName(name).replaceAll("[_\\s]", "");
     }
 
     private boolean isTimeField(SchemaElement dimensionElement, QueryColumn queryColumn) {

@@ -1051,7 +1051,11 @@ public class SupersetChartProcessor implements ExecuteResultProcessor {
             QueryResult queryResult, SupersetDatasetInfo datasetInfo, String vizType, Agent agent,
             String queryText) {
         FormDataProfile profile = resolveFormDataProfile(vizType);
-        FormDataContext context = buildFormDataContext(parseInfo, queryResult, datasetInfo);
+        String sql = resolveSql(queryResult, parseInfo);
+        Map<String, String> metricAliases =
+                resolveSemanticMetricAliases(parseInfo, datasetInfo, sql);
+        FormDataContext context =
+                buildFormDataContext(parseInfo, queryResult, datasetInfo, metricAliases);
         log.debug(
                 "superset buildFormData context, vizType={}, parseLimit={}, parseDateInfo={}, resolvedTimeColumn={}, resolvedTimeRange={}, resolvedTimeGrain={}, resolvedOrders={}, selectedColumns={}",
                 vizType, parseInfo == null ? null : parseInfo.getLimit(),
@@ -1064,7 +1068,7 @@ public class SupersetChartProcessor implements ExecuteResultProcessor {
         Map<String, Object> baseFormData;
         if (config != null && config.isVizTypeLlmEnabled()) {
             baseFormData = buildLlmFormData(config, queryResult, datasetInfo, vizType, profile,
-                    agent, queryText);
+                    agent, queryText, metricAliases);
         } else {
             baseFormData = buildAutoFormData(context, parseInfo, queryResult, profile);
         }
@@ -1146,9 +1150,10 @@ public class SupersetChartProcessor implements ExecuteResultProcessor {
 
     private Map<String, Object> buildLlmFormData(SupersetPluginConfig config,
             QueryResult queryResult, SupersetDatasetInfo datasetInfo, String vizType,
-            FormDataProfile profile, Agent agent, String queryText) {
+            FormDataProfile profile, Agent agent, String queryText,
+            Map<String, String> metricAliases) {
         JSONObject llmKeys = resolveLlmFormDataKeys(config, queryResult, datasetInfo, vizType,
-                profile, agent, queryText);
+                profile, agent, queryText, metricAliases);
         validateLlmFormDataKeys(vizType, profile, llmKeys);
         Map<String, Object> formData = new HashMap<>();
         String queryMode = llmKeys.getString("query_mode");
@@ -1186,15 +1191,15 @@ public class SupersetChartProcessor implements ExecuteResultProcessor {
         applyLlmKey(formData, llmKeys, "all_columns");
         applyLlmKey(formData, llmKeys, "all_columns_x");
         applyLlmKey(formData, llmKeys, "all_columns_y");
-        normalizeLlmMetrics(formData, datasetInfo);
+        normalizeLlmMetrics(formData, datasetInfo, metricAliases);
         if (FormDataProfile.TABLE == profile) {
             applyTableDefaults(formData);
         }
         return formData;
     }
 
-    private void normalizeLlmMetrics(Map<String, Object> formData,
-            SupersetDatasetInfo datasetInfo) {
+    private void normalizeLlmMetrics(Map<String, Object> formData, SupersetDatasetInfo datasetInfo,
+            Map<String, String> metricAliases) {
         if (formData == null || datasetInfo == null) {
             return;
         }
@@ -1202,20 +1207,23 @@ public class SupersetChartProcessor implements ExecuteResultProcessor {
                 toColumnMap(datasetInfo.getColumns() == null ? Collections.emptyList()
                         : datasetInfo.getColumns());
         List<String> metricNames = resolveDatasetMetrics(datasetInfo);
-        normalizeMetricField(formData, columnMap, metricNames, "metric");
-        normalizeMetricField(formData, columnMap, metricNames, "secondary_metric");
-        normalizeMetricListField(formData, columnMap, metricNames, "metrics");
-        normalizeMetricListField(formData, columnMap, metricNames, "metrics_b");
-        normalizeMetricListField(formData, columnMap, metricNames, "tooltip_metrics");
+        normalizeMetricField(formData, columnMap, metricNames, metricAliases, "metric");
+        normalizeMetricField(formData, columnMap, metricNames, metricAliases, "secondary_metric");
+        normalizeMetricListField(formData, columnMap, metricNames, metricAliases, "metrics");
+        normalizeMetricListField(formData, columnMap, metricNames, metricAliases, "metrics_b");
+        normalizeMetricListField(formData, columnMap, metricNames, metricAliases,
+                "tooltip_metrics");
     }
 
     private void normalizeMetricField(Map<String, Object> formData,
-            Map<String, SupersetDatasetColumn> columnMap, List<String> metricNames, String key) {
+            Map<String, SupersetDatasetColumn> columnMap, List<String> metricNames,
+            Map<String, String> metricAliases, String key) {
         Object value = formData.get(key);
         if (!(value instanceof String)) {
             return;
         }
-        String metricName = (String) value;
+        String metricName = StringUtils
+                .defaultIfBlank(resolveMetricAlias((String) value, metricAliases), (String) value);
         Object resolved = resolveMetricValue(metricName, columnMap, metricNames);
         if (resolved != null) {
             formData.put(key, resolved);
@@ -1223,7 +1231,8 @@ public class SupersetChartProcessor implements ExecuteResultProcessor {
     }
 
     private void normalizeMetricListField(Map<String, Object> formData,
-            Map<String, SupersetDatasetColumn> columnMap, List<String> metricNames, String key) {
+            Map<String, SupersetDatasetColumn> columnMap, List<String> metricNames,
+            Map<String, String> metricAliases, String key) {
         Object value = formData.get(key);
         if (!(value instanceof List)) {
             return;
@@ -1241,7 +1250,8 @@ public class SupersetChartProcessor implements ExecuteResultProcessor {
             if (!(item instanceof String)) {
                 continue;
             }
-            String name = (String) item;
+            String name = StringUtils.defaultIfBlank(
+                    resolveMetricAlias((String) item, metricAliases), (String) item);
             Object resolved = resolveMetricValue(name, columnMap, metricNames);
             if (resolved != null) {
                 normalized.add(resolved);
@@ -1288,6 +1298,237 @@ public class SupersetChartProcessor implements ExecuteResultProcessor {
         return null;
     }
 
+    private Map<String, String> resolveSemanticMetricAliases(SemanticParseInfo parseInfo,
+            SupersetDatasetInfo datasetInfo, String sql) {
+        if (parseInfo == null || CollectionUtils.isEmpty(parseInfo.getMetrics())) {
+            return Collections.emptyMap();
+        }
+        List<String> datasetMetricNames = resolveDatasetMetrics(datasetInfo);
+        if (CollectionUtils.isEmpty(datasetMetricNames)) {
+            return Collections.emptyMap();
+        }
+        Map<String, String> metricAliases = new HashMap<>();
+        List<SchemaElement> unresolvedMetrics = new ArrayList<>();
+        Set<String> usedDatasetMetrics = new LinkedHashSet<>();
+        for (SchemaElement metric : parseInfo.getMetrics()) {
+            String resolvedMetric = resolveDirectDatasetMetric(metric, datasetMetricNames);
+            if (resolvedMetric != null) {
+                registerMetricAlias(metricAliases, metric, resolvedMetric);
+                usedDatasetMetrics.add(normalizeName(resolvedMetric));
+            } else if (metric != null) {
+                unresolvedMetrics.add(metric);
+            }
+        }
+        if (CollectionUtils.isEmpty(unresolvedMetrics) || StringUtils.isBlank(sql)) {
+            return metricAliases;
+        }
+        List<MetricSqlBinding> sqlBindings = resolveTopLevelMetricBindings(sql, datasetMetricNames);
+        for (SchemaElement metric : unresolvedMetrics) {
+            String resolvedMetric =
+                    resolveExplicitMetricAlias(metric, sqlBindings, usedDatasetMetrics);
+            if (StringUtils.isBlank(resolvedMetric)) {
+                continue;
+            }
+            registerMetricAlias(metricAliases, metric, resolvedMetric);
+            usedDatasetMetrics.add(normalizeName(resolvedMetric));
+        }
+        return metricAliases;
+    }
+
+    private String resolveDirectDatasetMetric(SchemaElement metric,
+            List<String> datasetMetricNames) {
+        if (metric == null || CollectionUtils.isEmpty(datasetMetricNames)) {
+            return null;
+        }
+        String resolvedMetric = resolveDatasetMetricName(metric.getBizName(), datasetMetricNames);
+        if (resolvedMetric != null) {
+            return resolvedMetric;
+        }
+        resolvedMetric = resolveDatasetMetricName(metric.getName(), datasetMetricNames);
+        if (resolvedMetric != null || CollectionUtils.isEmpty(metric.getAlias())) {
+            return resolvedMetric;
+        }
+        for (String alias : metric.getAlias()) {
+            resolvedMetric = resolveDatasetMetricName(alias, datasetMetricNames);
+            if (resolvedMetric != null) {
+                return resolvedMetric;
+            }
+        }
+        return null;
+    }
+
+    private List<MetricSqlBinding> resolveTopLevelMetricBindings(String sql,
+            List<String> datasetMetricNames) {
+        if (StringUtils.isBlank(sql) || CollectionUtils.isEmpty(datasetMetricNames)) {
+            return Collections.emptyList();
+        }
+        List<MetricSqlBinding> bindings = new ArrayList<>();
+        for (SelectItem<?> selectItem : resolveTopLevelSelectItems(sql)) {
+            if (selectItem == null || selectItem.getExpression() == null) {
+                continue;
+            }
+            String outputAlias = resolveSelectOutputName(selectItem);
+            String datasetMetricName = resolveDatasetMetricName(outputAlias, datasetMetricNames);
+            if (StringUtils.isBlank(datasetMetricName)) {
+                continue;
+            }
+            bindings.add(new MetricSqlBinding(datasetMetricName, outputAlias,
+                    resolveExpressionSourceFields(selectItem.getExpression())));
+        }
+        return bindings;
+    }
+
+    private String resolveExplicitMetricAlias(SchemaElement metric, List<MetricSqlBinding> bindings,
+            Set<String> usedDatasetMetrics) {
+        if (metric == null || CollectionUtils.isEmpty(bindings)) {
+            return null;
+        }
+        Set<String> identifiers = resolveMetricIdentifiers(metric);
+        if (identifiers.isEmpty()) {
+            return null;
+        }
+        List<String> matches = new ArrayList<>();
+        for (MetricSqlBinding binding : bindings) {
+            if (binding == null || StringUtils.isBlank(binding.datasetMetricName)
+                    || usedDatasetMetrics.contains(normalizeName(binding.datasetMetricName))) {
+                continue;
+            }
+            if (!matchesMetricBinding(identifiers, binding)) {
+                continue;
+            }
+            if (!matches.contains(binding.datasetMetricName)) {
+                matches.add(binding.datasetMetricName);
+            }
+        }
+        return matches.size() == 1 ? matches.get(0) : null;
+    }
+
+    private Set<String> resolveMetricIdentifiers(SchemaElement metric) {
+        Set<String> identifiers = new LinkedHashSet<>();
+        if (metric == null) {
+            return identifiers;
+        }
+        registerMetricIdentifier(identifiers, metric.getBizName());
+        registerMetricIdentifier(identifiers, metric.getName());
+        if (!CollectionUtils.isEmpty(metric.getAlias())) {
+            for (String alias : metric.getAlias()) {
+                registerMetricIdentifier(identifiers, alias);
+            }
+        }
+        return identifiers;
+    }
+
+    private void registerMetricIdentifier(Set<String> identifiers, String rawName) {
+        if (identifiers == null || StringUtils.isBlank(rawName)) {
+            return;
+        }
+        identifiers.add(rawName);
+    }
+
+    private boolean matchesMetricBinding(Set<String> identifiers, MetricSqlBinding binding) {
+        if (CollectionUtils.isEmpty(identifiers) || binding == null) {
+            return false;
+        }
+        Set<String> strictTargets = new LinkedHashSet<>();
+        registerBindingTarget(strictTargets, binding.outputAlias, false);
+        if (!CollectionUtils.isEmpty(binding.sourceFields)) {
+            for (String sourceField : binding.sourceFields) {
+                registerBindingTarget(strictTargets, sourceField, false);
+            }
+        }
+        Set<String> relaxedTargets = new LinkedHashSet<>();
+        registerBindingTarget(relaxedTargets, binding.outputAlias, true);
+        if (!CollectionUtils.isEmpty(binding.sourceFields)) {
+            for (String sourceField : binding.sourceFields) {
+                registerBindingTarget(relaxedTargets, sourceField, true);
+            }
+        }
+        for (String identifier : identifiers) {
+            String strictIdentifier = normalizeMetricName(identifier);
+            if (strictTargets.contains(strictIdentifier)) {
+                return true;
+            }
+            String relaxedIdentifier = normalizeMetricMatchToken(identifier);
+            if (StringUtils.isBlank(relaxedIdentifier)) {
+                continue;
+            }
+            for (String relaxedTarget : relaxedTargets) {
+                if (isExplicitMetricTokenMatch(relaxedIdentifier, relaxedTarget)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private void registerBindingTarget(Set<String> targets, String rawValue, boolean relaxed) {
+        if (targets == null || StringUtils.isBlank(rawValue)) {
+            return;
+        }
+        String normalized =
+                relaxed ? normalizeMetricMatchToken(rawValue) : normalizeMetricName(rawValue);
+        if (StringUtils.isNotBlank(normalized)) {
+            targets.add(normalized);
+        }
+    }
+
+    private boolean isExplicitMetricTokenMatch(String metricToken, String targetToken) {
+        if (StringUtils.isBlank(metricToken) || StringUtils.isBlank(targetToken)) {
+            return false;
+        }
+        if (metricToken.equals(targetToken)) {
+            return true;
+        }
+        return metricToken.length() > 2 && targetToken.length() > 2
+                && targetToken.contains(metricToken);
+    }
+
+    private void registerMetricAlias(Map<String, String> metricAliases, SchemaElement metric,
+            String datasetMetricName) {
+        if (metricAliases == null || metric == null || StringUtils.isBlank(datasetMetricName)) {
+            return;
+        }
+        registerMetricAliasKey(metricAliases, metric.getBizName(), datasetMetricName);
+        registerMetricAliasKey(metricAliases, metric.getName(), datasetMetricName);
+        if (!CollectionUtils.isEmpty(metric.getAlias())) {
+            for (String alias : metric.getAlias()) {
+                registerMetricAliasKey(metricAliases, alias, datasetMetricName);
+            }
+        }
+    }
+
+    private void registerMetricAliasKey(Map<String, String> metricAliases, String rawMetricName,
+            String datasetMetricName) {
+        if (metricAliases == null || StringUtils.isBlank(rawMetricName)
+                || StringUtils.isBlank(datasetMetricName)) {
+            return;
+        }
+        metricAliases.putIfAbsent(normalizeMetricName(rawMetricName), datasetMetricName);
+    }
+
+    private String resolveMetricAlias(String metricName, Map<String, String> metricAliases) {
+        if (StringUtils.isBlank(metricName) || CollectionUtils.isEmpty(metricAliases)) {
+            return null;
+        }
+        return metricAliases.get(normalizeMetricName(metricName));
+    }
+
+    private String resolveDatasetMetricName(String metricName, List<String> datasetMetricNames) {
+        if (StringUtils.isBlank(metricName) || CollectionUtils.isEmpty(datasetMetricNames)) {
+            return null;
+        }
+        if (datasetMetricNames.contains(metricName)) {
+            return metricName;
+        }
+        String normalizedMetric = normalizeMetricName(metricName);
+        for (String datasetMetric : datasetMetricNames) {
+            if (normalizeMetricName(datasetMetric).equals(normalizedMetric)) {
+                return datasetMetric;
+            }
+        }
+        return null;
+    }
+
     private String normalizeMetricName(String name) {
         if (StringUtils.isBlank(name)) {
             return "";
@@ -1298,6 +1539,10 @@ public class SupersetChartProcessor implements ExecuteResultProcessor {
         normalized = normalized.replaceAll("\\)$", "");
         normalized = normalized.replaceAll("[\"`\\s]", "");
         return normalized;
+    }
+
+    private String normalizeMetricMatchToken(String name) {
+        return normalizeMetricName(name).replaceAll("[_\\s]", "");
     }
 
     private boolean looksAggregated(String name) {
@@ -1321,7 +1566,7 @@ public class SupersetChartProcessor implements ExecuteResultProcessor {
 
     private JSONObject resolveLlmFormDataKeys(SupersetPluginConfig config, QueryResult queryResult,
             SupersetDatasetInfo datasetInfo, String vizType, FormDataProfile profile, Agent agent,
-            String queryText) {
+            String queryText, Map<String, String> metricAliases) {
         ChatLanguageModel chatLanguageModel = resolveChatModel(config, agent);
         if (chatLanguageModel == null) {
             throw new IllegalStateException("superset formdata llm chat model missing");
@@ -1341,7 +1586,7 @@ public class SupersetChartProcessor implements ExecuteResultProcessor {
         if (payload == null) {
             throw new IllegalStateException("superset formdata llm response invalid");
         }
-        sanitizeLlmFieldsAgainstDataset(payload, datasetInfo, vizType, profile);
+        sanitizeLlmFieldsAgainstDataset(payload, datasetInfo, vizType, profile, metricAliases);
         return payload;
     }
 
@@ -1438,7 +1683,8 @@ public class SupersetChartProcessor implements ExecuteResultProcessor {
     }
 
     private void sanitizeLlmFieldsAgainstDataset(JSONObject payload,
-            SupersetDatasetInfo datasetInfo, String vizType, FormDataProfile profile) {
+            SupersetDatasetInfo datasetInfo, String vizType, FormDataProfile profile,
+            Map<String, String> metricAliases) {
         if (payload == null || datasetInfo == null) {
             return;
         }
@@ -1447,6 +1693,11 @@ public class SupersetChartProcessor implements ExecuteResultProcessor {
                 .map(String::valueOf).collect(Collectors.toSet());
         Set<String> columnNames = resolveDatasetColumns(datasetInfo).stream().map(String::valueOf)
                 .collect(Collectors.toSet());
+        normalizeMetricPayloadField(payload, metricNames, metricAliases, "metric");
+        normalizeMetricPayloadField(payload, metricNames, metricAliases, "secondary_metric");
+        normalizeMetricPayloadListField(payload, metricNames, metricAliases, "metrics");
+        normalizeMetricPayloadListField(payload, metricNames, metricAliases, "metrics_b");
+        normalizeMetricPayloadListField(payload, metricNames, metricAliases, "tooltip_metrics");
         sanitizeFieldInSet(payload, "metric", metricNames, strictKeys.contains("metric"));
         sanitizeFieldInSet(payload, "secondary_metric", metricNames,
                 strictKeys.contains("secondary_metric"));
@@ -1483,6 +1734,49 @@ public class SupersetChartProcessor implements ExecuteResultProcessor {
                 strictKeys.contains("all_columns_x"));
         sanitizeFieldInSet(payload, "all_columns_y", columnNames,
                 strictKeys.contains("all_columns_y"));
+    }
+
+    private void normalizeMetricPayloadField(JSONObject payload, Set<String> allowList,
+            Map<String, String> metricAliases, String key) {
+        if (payload == null || StringUtils.isBlank(key) || allowList == null
+                || allowList.isEmpty()) {
+            return;
+        }
+        String value = payload.getString(key);
+        if (StringUtils.isBlank(value) || allowList.contains(value)) {
+            return;
+        }
+        String resolved = resolveMetricAlias(value, metricAliases);
+        if (StringUtils.isNotBlank(resolved) && allowList.contains(resolved)) {
+            payload.put(key, resolved);
+        }
+    }
+
+    private void normalizeMetricPayloadListField(JSONObject payload, Set<String> allowList,
+            Map<String, String> metricAliases, String key) {
+        if (payload == null || StringUtils.isBlank(key) || allowList == null
+                || allowList.isEmpty()) {
+            return;
+        }
+        Object value = payload.get(key);
+        if (!(value instanceof List)) {
+            return;
+        }
+        List<Object> normalized = new ArrayList<>();
+        for (Object item : (List<?>) value) {
+            if (!(item instanceof String)) {
+                normalized.add(item);
+                continue;
+            }
+            String raw = (String) item;
+            if (allowList.contains(raw)) {
+                normalized.add(raw);
+                continue;
+            }
+            String resolved = resolveMetricAlias(raw, metricAliases);
+            normalized.add(StringUtils.defaultIfBlank(resolved, raw));
+        }
+        payload.put(key, normalized);
     }
 
     private Set<String> resolveStrictLlmFieldKeys(String vizType, FormDataProfile profile) {
@@ -1708,7 +2002,8 @@ public class SupersetChartProcessor implements ExecuteResultProcessor {
     }
 
     private FormDataContext buildFormDataContext(SemanticParseInfo parseInfo,
-            QueryResult queryResult, SupersetDatasetInfo datasetInfo) {
+            QueryResult queryResult, SupersetDatasetInfo datasetInfo,
+            Map<String, String> metricAliases) {
         List<SupersetDatasetColumn> datasetColumns =
                 datasetInfo == null ? Collections.emptyList() : datasetInfo.getColumns();
         if (CollectionUtils.isEmpty(datasetColumns)) {
@@ -1717,14 +2012,15 @@ public class SupersetChartProcessor implements ExecuteResultProcessor {
         List<String> columnNames = resolveDatasetColumns(datasetColumns);
         Map<String, SupersetDatasetColumn> columnMap = toColumnMap(datasetColumns);
         List<String> dimensionColumns = resolveDimensionColumns(parseInfo, columnMap);
-        List<Object> metrics = resolveMetrics(parseInfo, datasetInfo, columnMap);
+        List<Object> metrics = resolveMetrics(parseInfo, datasetInfo, columnMap, metricAliases);
         String timeColumn = resolveTimeColumn(parseInfo, datasetInfo, columnMap);
         List<String> timeColumns = resolveTimeColumns(datasetColumns, datasetInfo);
         List<String> numericColumns = resolveNumericColumns(datasetColumns);
         List<String> selectedColumns = resolveSelectedColumns(parseInfo, queryResult, columnMap,
                 dimensionColumns, timeColumn);
         DateConf dateInfo = parseInfo == null ? null : parseInfo.getDateInfo();
-        List<FormDataOrder> orders = resolveOrders(parseInfo, datasetInfo, columnMap);
+        List<FormDataOrder> orders =
+                resolveOrders(parseInfo, datasetInfo, columnMap, metricAliases);
         long rowLimit = resolveRowLimit(parseInfo);
         String timeRange = resolveTimeRange(dateInfo);
         String timeGrain = resolveTimeGrain(dateInfo);
@@ -2766,6 +3062,19 @@ public class SupersetChartProcessor implements ExecuteResultProcessor {
         }
     }
 
+    private static class MetricSqlBinding {
+        private final String datasetMetricName;
+        private final String outputAlias;
+        private final Set<String> sourceFields;
+
+        private MetricSqlBinding(String datasetMetricName, String outputAlias,
+                Set<String> sourceFields) {
+            this.datasetMetricName = datasetMetricName;
+            this.outputAlias = outputAlias;
+            this.sourceFields = sourceFields == null ? Collections.emptySet() : sourceFields;
+        }
+    }
+
     private static class RequiredKeyRules {
         private final List<String> required;
         private final List<List<String>> requiredAnyOf;
@@ -2839,25 +3148,43 @@ public class SupersetChartProcessor implements ExecuteResultProcessor {
 
     private List<String> resolveFormDataMetricCandidates(SupersetDatasetInfo datasetInfo) {
         List<String> candidates = new ArrayList<>();
-        candidates.addAll(resolveDatasetMetrics(datasetInfo));
-        if (datasetInfo == null || CollectionUtils.isEmpty(datasetInfo.getColumns())) {
+        candidates.addAll(resolveDatasetMetrics(datasetInfo).stream()
+                .filter(this::isVisibleMetricCandidateName).collect(Collectors.toList()));
+        if (!candidates.isEmpty() || datasetInfo == null
+                || CollectionUtils.isEmpty(datasetInfo.getColumns())) {
             return candidates.stream().distinct().collect(Collectors.toList());
         }
         for (SupersetDatasetColumn column : datasetInfo.getColumns()) {
-            if (column == null || StringUtils.isBlank(column.getColumnName())) {
+            if (!isVisibleMetricCandidateColumn(column)) {
                 continue;
             }
-            String columnName = column.getColumnName();
-            if (looksAggregated(columnName)) {
-                candidates.add(columnName);
-                continue;
-            }
-            if (isNumericType(column.getType())) {
-                candidates.add(columnName);
-            }
+            candidates.add(column.getColumnName());
         }
         return candidates.stream().filter(StringUtils::isNotBlank).distinct()
                 .collect(Collectors.toList());
+    }
+
+    private boolean isVisibleMetricCandidateName(String metricName) {
+        return StringUtils.isNotBlank(metricName) && !isAuxiliaryMetricName(metricName);
+    }
+
+    private boolean isVisibleMetricCandidateColumn(SupersetDatasetColumn column) {
+        if (column == null || StringUtils.isBlank(column.getColumnName())
+                || Boolean.TRUE.equals(column.getGroupby())
+                || isAuxiliaryMetricName(column.getColumnName())) {
+            return false;
+        }
+        return looksAggregated(column.getColumnName()) || isNumericType(column.getType());
+    }
+
+    private boolean isAuxiliaryMetricName(String metricName) {
+        String normalized = normalizeMetricMatchToken(metricName);
+        if (StringUtils.isBlank(normalized)) {
+            return false;
+        }
+        return normalized.equals("rank") || normalized.contains("rownumber")
+                || normalized.contains("denserank") || normalized.contains("percentrank")
+                || normalized.contains("排名");
     }
 
     private Map<String, SupersetDatasetColumn> toColumnMap(List<SupersetDatasetColumn> columns) {
@@ -3010,7 +3337,8 @@ public class SupersetChartProcessor implements ExecuteResultProcessor {
     }
 
     private List<FormDataOrder> resolveOrders(SemanticParseInfo parseInfo,
-            SupersetDatasetInfo datasetInfo, Map<String, SupersetDatasetColumn> columnMap) {
+            SupersetDatasetInfo datasetInfo, Map<String, SupersetDatasetColumn> columnMap,
+            Map<String, String> metricAliases) {
         if (parseInfo == null || CollectionUtils.isEmpty(parseInfo.getOrders())) {
             return Collections.emptyList();
         }
@@ -3019,22 +3347,10 @@ public class SupersetChartProcessor implements ExecuteResultProcessor {
                 datasetInfo == null ? Collections.emptyList() : datasetInfo.getMetrics(),
                 columnMap);
         List<FormDataOrder> resolved = new ArrayList<>();
-        List<Order> sourceOrders = parseInfo.getOrders().stream().sorted((left, right) -> {
-            String leftKey = left == null ? "" : StringUtils.defaultString(left.getColumn());
-            String rightKey = right == null ? "" : StringUtils.defaultString(right.getColumn());
-            int compare = leftKey.compareToIgnoreCase(rightKey);
-            if (compare != 0) {
-                return compare;
-            }
-            String leftDirection =
-                    left == null ? "" : StringUtils.defaultString(left.getDirection());
-            String rightDirection =
-                    right == null ? "" : StringUtils.defaultString(right.getDirection());
-            return leftDirection.compareToIgnoreCase(rightDirection);
-        }).collect(Collectors.toList());
+        List<Order> sourceOrders = new ArrayList<>(parseInfo.getOrders());
         for (Order order : sourceOrders) {
-            FormDataOrder item =
-                    resolveOrder(parseInfo, order, metricMap, columnMap, relaxedColumnMap);
+            FormDataOrder item = resolveOrder(parseInfo, order, metricMap, columnMap,
+                    relaxedColumnMap, metricAliases);
             if (item != null) {
                 resolved.add(item);
             }
@@ -3045,21 +3361,24 @@ public class SupersetChartProcessor implements ExecuteResultProcessor {
     private FormDataOrder resolveOrder(SemanticParseInfo parseInfo, Order order,
             Map<String, SupersetDatasetMetric> metricMap,
             Map<String, SupersetDatasetColumn> columnMap,
-            Map<String, SupersetDatasetColumn> relaxedColumnMap) {
+            Map<String, SupersetDatasetColumn> relaxedColumnMap,
+            Map<String, String> metricAliases) {
         if (order == null || StringUtils.isBlank(order.getColumn())) {
             return null;
         }
         boolean descending = !StringUtils.equalsIgnoreCase(order.getDirection(), "asc");
         String orderColumn = order.getColumn();
         String normalizedOrder = normalizeName(orderColumn);
+        String resolvedMetricOrder = StringUtils
+                .defaultIfBlank(resolveMetricAlias(orderColumn, metricAliases), orderColumn);
         boolean metricOrder = isMetricOrder(parseInfo, normalizedOrder);
         if (metricOrder) {
-            SupersetDatasetMetric datasetMetric = metricMap.get(normalizedOrder);
+            SupersetDatasetMetric datasetMetric = metricMap.get(normalizeName(resolvedMetricOrder));
             if (datasetMetric != null && StringUtils.isNotBlank(datasetMetric.getMetricName())) {
                 return new FormDataOrder(datasetMetric.getMetricName(), true, descending);
             }
             SupersetDatasetColumn metricColumn =
-                    resolveOrderColumn(orderColumn, columnMap, relaxedColumnMap);
+                    resolveOrderColumn(resolvedMetricOrder, columnMap, relaxedColumnMap);
             if (metricColumn != null) {
                 return new FormDataOrder(
                         buildAdhocMetric(metricColumn,
@@ -3235,7 +3554,8 @@ public class SupersetChartProcessor implements ExecuteResultProcessor {
     }
 
     private List<Object> resolveMetrics(SemanticParseInfo parseInfo,
-            SupersetDatasetInfo datasetInfo, Map<String, SupersetDatasetColumn> columnMap) {
+            SupersetDatasetInfo datasetInfo, Map<String, SupersetDatasetColumn> columnMap,
+            Map<String, String> metricAliases) {
         List<Object> metrics = new ArrayList<>();
         List<SupersetDatasetMetric> datasetMetrics =
                 datasetInfo == null ? Collections.emptyList() : datasetInfo.getMetrics();
@@ -3247,20 +3567,25 @@ public class SupersetChartProcessor implements ExecuteResultProcessor {
                 if (StringUtils.isBlank(name)) {
                     continue;
                 }
+                String resolvedMetricName =
+                        StringUtils.defaultIfBlank(resolveMetricAlias(name, metricAliases), name);
                 if (hasDatasetMetrics) {
-                    SupersetDatasetMetric metric = metricMap.get(normalizeName(name));
+                    SupersetDatasetMetric metric = metricMap.get(normalizeName(resolvedMetricName));
                     if (metric != null) {
                         metrics.add(metric.getMetricName());
                         continue;
                     }
                 }
-                SupersetDatasetColumn column = columnMap.get(normalizeName(name));
+                SupersetDatasetColumn column = columnMap.get(normalizeName(resolvedMetricName));
                 if (column != null) {
                     metrics.add(buildAdhocMetric(column, resolveAggregate(element)));
                 }
             }
         }
         if (!metrics.isEmpty()) {
+            return metrics;
+        }
+        if (parseInfo != null && !CollectionUtils.isEmpty(parseInfo.getMetrics())) {
             return metrics;
         }
         if (hasDatasetMetrics) {

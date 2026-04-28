@@ -40,7 +40,7 @@ public class SemanticParseInfo implements Serializable {
     private FilterType filterType = FilterType.AND;
 
     private AggregateTypeEnum aggType = AggregateTypeEnum.NONE;
-    private Set<Order> orders = Sets.newHashSet();
+    private Set<Order> orders = Sets.newLinkedHashSet();
     private long limit = DEFAULT_DETAIL_LIMIT;
     private double score;
     private List<SchemaElementMatch> elementMatches = Lists.newArrayList();
