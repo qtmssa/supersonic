@@ -21,6 +21,78 @@ const buildData = (response: any) =>
     queryResults: [],
   } as any);
 
+const LIGHT_THEME_TOKENS = {
+  colorPrimary: '#1672fa',
+  colorBgBase: '#ffffff',
+  colorBgLayout: '#f7fafa',
+  colorBgContainer: '#ffffff',
+  colorTextBase: '#181a1a',
+  colorText: '#181a1a',
+  colorTextSecondary: '#3d4242',
+  colorBorder: '#e1e6e6',
+};
+
+const DARK_THEME_TOKENS = {
+  colorPrimary: '#7cb8ff',
+  colorBgBase: '#101014',
+  colorBgLayout: '#0b0c0f',
+  colorBgContainer: '#101014',
+  colorTextBase: '#f4f7fb',
+  colorText: '#f4f7fb',
+  colorTextSecondary: '#a9b4c0',
+  colorBorder: '#2d3748',
+};
+
+const applyLightThemeVariables = () => {
+  document.documentElement.style.setProperty('--tme-primary-color', LIGHT_THEME_TOKENS.colorPrimary);
+  document.documentElement.style.setProperty('--component-background', LIGHT_THEME_TOKENS.colorBgBase);
+  document.documentElement.style.setProperty('--body-background', LIGHT_THEME_TOKENS.colorBgLayout);
+  document.documentElement.style.setProperty('--text-color', LIGHT_THEME_TOKENS.colorText);
+  document.documentElement.style.setProperty(
+    '--text-color-secondary',
+    LIGHT_THEME_TOKENS.colorTextSecondary
+  );
+  document.documentElement.style.setProperty('--border-color-base', LIGHT_THEME_TOKENS.colorBorder);
+};
+
+const applyDarkThemeVariables = () => {
+  document.documentElement.style.setProperty('--tme-primary-color', DARK_THEME_TOKENS.colorPrimary);
+  document.documentElement.style.setProperty('--component-background', DARK_THEME_TOKENS.colorBgBase);
+  document.documentElement.style.setProperty('--body-background', DARK_THEME_TOKENS.colorBgLayout);
+  document.documentElement.style.setProperty('--text-color', DARK_THEME_TOKENS.colorText);
+  document.documentElement.style.setProperty(
+    '--text-color-secondary',
+    DARK_THEME_TOKENS.colorTextSecondary
+  );
+  document.documentElement.style.setProperty('--border-color-base', DARK_THEME_TOKENS.colorBorder);
+};
+
+const buildExpectedThemeConfig = (
+  mode: 'default' | 'dark',
+  token: Record<string, string>
+) => {
+  if (mode === 'dark') {
+    return {
+      theme_default: {
+        algorithm: 'default',
+      },
+      theme_dark: {
+        algorithm: 'dark',
+        token,
+      },
+    };
+  }
+  return {
+    theme_default: {
+      algorithm: 'default',
+      token,
+    },
+    theme_dark: {
+      algorithm: 'dark',
+    },
+  };
+};
+
 const ensureEmbedDashboardMock = () => {
   const { embedDashboard } = require('@superset-ui/embedded-sdk');
   embedDashboard.mockResolvedValue({
@@ -75,6 +147,10 @@ describe('SupersetChart', () => {
     document.body.style.cssText = '';
     ensureEmbedDashboardMock();
     ensureServiceMocks();
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
   });
 
   test('does not use embedded url fallback', async () => {
@@ -307,12 +383,7 @@ describe('SupersetChart', () => {
 
   test('syncs host theme mode and color tokens into embedded dashboard', async () => {
     const { embedDashboard } = require('@superset-ui/embedded-sdk');
-    document.documentElement.style.setProperty('--tme-primary-color', '#1672fa');
-    document.documentElement.style.setProperty('--component-background', '#ffffff');
-    document.documentElement.style.setProperty('--body-background', '#f7fafa');
-    document.documentElement.style.setProperty('--text-color', '#181a1a');
-    document.documentElement.style.setProperty('--text-color-secondary', '#3d4242');
-    document.documentElement.style.setProperty('--border-color-base', '#e1e6e6');
+    applyLightThemeVariables();
 
     const data = buildData({
       webPage: { url: '', params: [] },
@@ -328,24 +399,44 @@ describe('SupersetChart', () => {
     await waitFor(() => {
       expect(instance.setThemeMode).toHaveBeenCalledWith('default');
     });
-    expect(instance.setThemeConfig).toHaveBeenCalledWith({
-      token: {
-        colorPrimary: '#1672fa',
-        colorBgBase: '#ffffff',
-        colorBgLayout: '#f7fafa',
-        colorBgContainer: '#ffffff',
-        colorTextBase: '#181a1a',
-        colorText: '#181a1a',
-        colorTextSecondary: '#3d4242',
-        colorBorder: '#e1e6e6',
-      },
-    });
+    expect(instance.setThemeConfig).toHaveBeenCalledWith(
+      buildExpectedThemeConfig('default', LIGHT_THEME_TOKENS)
+    );
+    const lastThemeConfigOrder = instance.setThemeConfig.mock.invocationCallOrder.at(-1);
+    const lastThemeModeOrder = instance.setThemeMode.mock.invocationCallOrder.at(-1);
+    expect(lastThemeConfigOrder).toBeLessThan(lastThemeModeOrder);
   });
 
-  test('re-syncs embedded dashboard theme when host theme changes', async () => {
+  test('applies dark host theme on first render before switching iframe mode', async () => {
     const { embedDashboard } = require('@superset-ui/embedded-sdk');
-    document.documentElement.style.setProperty('--component-background', '#ffffff');
-    document.documentElement.style.setProperty('--body-background', '#f7fafa');
+    document.documentElement.setAttribute('data-theme', 'dark');
+    applyDarkThemeVariables();
+
+    const data = buildData({
+      webPage: { url: '', params: [] },
+      pluginId: 1,
+      embeddedId: 'uuid-theme-dark',
+      supersetDomain: 'https://superset.example.com',
+    });
+    render(<SupersetChart id={1} data={data} />);
+    await waitFor(() => {
+      expect(embedDashboard).toHaveBeenCalled();
+    });
+    const instance = await embedDashboard.mock.results[0].value;
+    await waitFor(() => {
+      expect(instance.setThemeMode).toHaveBeenCalledWith('dark');
+    });
+    expect(instance.setThemeConfig).toHaveBeenCalledWith(
+      buildExpectedThemeConfig('dark', DARK_THEME_TOKENS)
+    );
+    const lastThemeConfigOrder = instance.setThemeConfig.mock.invocationCallOrder.at(-1);
+    const lastThemeModeOrder = instance.setThemeMode.mock.invocationCallOrder.at(-1);
+    expect(lastThemeConfigOrder).toBeLessThan(lastThemeModeOrder);
+  });
+
+  test('re-syncs embedded dashboard theme when host theme changes and switches back to light', async () => {
+    const { embedDashboard } = require('@superset-ui/embedded-sdk');
+    applyLightThemeVariables();
 
     const data = buildData({
       webPage: { url: '', params: [] },
@@ -363,20 +454,213 @@ describe('SupersetChart', () => {
     });
 
     document.documentElement.setAttribute('data-theme', 'dark');
-    document.documentElement.style.setProperty('--component-background', '#101014');
-    document.documentElement.style.setProperty('--body-background', '#0b0c0f');
+    applyDarkThemeVariables();
 
     await waitFor(() => {
       expect(instance.setThemeMode).toHaveBeenLastCalledWith('dark');
     });
     expect(instance.setThemeConfig).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        token: expect.objectContaining({
-          colorBgBase: '#101014',
-          colorBgLayout: '#0b0c0f',
-        }),
-      })
+      buildExpectedThemeConfig('dark', DARK_THEME_TOKENS)
     );
+
+    document.documentElement.setAttribute('data-theme', 'light');
+    applyLightThemeVariables();
+
+    await waitFor(() => {
+      expect(instance.setThemeMode).toHaveBeenLastCalledWith('default');
+    });
+    expect(instance.setThemeConfig).toHaveBeenLastCalledWith(
+      buildExpectedThemeConfig('default', LIGHT_THEME_TOKENS)
+    );
+    const lastThemeConfigOrder = instance.setThemeConfig.mock.invocationCallOrder.at(-1);
+    const lastThemeModeOrder = instance.setThemeMode.mock.invocationCallOrder.at(-1);
+    expect(lastThemeConfigOrder).toBeLessThan(lastThemeModeOrder);
+  });
+
+  test('syncs current theme into newly selected candidate dashboard', async () => {
+    const { embedDashboard } = require('@superset-ui/embedded-sdk');
+    document.documentElement.setAttribute('data-theme', 'dark');
+    applyDarkThemeVariables();
+    const data = buildData({
+      webPage: { url: '', params: [] },
+      pluginId: 1,
+      dashboardId: 88,
+      dashboardTitle: '访问趋势分析',
+      embeddedId: 'embed-line',
+      supersetDomain: 'https://superset.example.com',
+      vizTypeCandidates: [
+        {
+          vizType: 'echarts_timeseries_line',
+          vizName: 'Line Chart',
+          embeddedId: 'embed-line',
+          supersetDomain: 'https://superset.example.com',
+          chartId: 11,
+        },
+        {
+          vizType: 'echarts_timeseries_bar',
+          vizName: 'Bar Chart',
+          embeddedId: 'embed-bar',
+          supersetDomain: 'https://superset.example.com',
+          chartId: 22,
+        },
+      ],
+    });
+    render(<SupersetChart id={1} data={data} />);
+    await waitFor(() => {
+      expect(embedDashboard).toHaveBeenCalledTimes(1);
+    });
+    const firstInstance = await embedDashboard.mock.results[0].value;
+    await waitFor(() => {
+      expect(firstInstance.setThemeMode).toHaveBeenCalledWith('dark');
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: '柱状图' }));
+
+    await waitFor(() => {
+      expect(embedDashboard).toHaveBeenCalledTimes(2);
+    });
+    const secondInstance = await embedDashboard.mock.results[1].value;
+    await waitFor(() => {
+      expect(secondInstance.setThemeMode).toHaveBeenCalledWith('dark');
+    });
+    expect(secondInstance.setThemeConfig).toHaveBeenCalledWith(
+      buildExpectedThemeConfig('dark', DARK_THEME_TOKENS)
+    );
+  });
+
+  test('waits until host theme tokens are ready before pushing theme into embedded dashboard', async () => {
+    jest.useFakeTimers();
+    const { embedDashboard } = require('@superset-ui/embedded-sdk');
+    const originalGetComputedStyle = window.getComputedStyle;
+    let ready = false;
+    const getComputedStyleSpy = jest
+      .spyOn(window, 'getComputedStyle')
+      .mockImplementation((element: Element) => {
+        const isRoot = element === document.documentElement;
+        const backgroundColor = ready ? LIGHT_THEME_TOKENS.colorBgBase : 'transparent';
+        const color = ready ? LIGHT_THEME_TOKENS.colorText : '';
+        return {
+          getPropertyValue: (name: string) => {
+            if (!ready) {
+              return '';
+            }
+            if (name === '--tme-primary-color') {
+              return LIGHT_THEME_TOKENS.colorPrimary;
+            }
+            if (name === '--component-background') {
+              return LIGHT_THEME_TOKENS.colorBgBase;
+            }
+            if (name === '--body-background') {
+              return LIGHT_THEME_TOKENS.colorBgLayout;
+            }
+            if (name === '--text-color') {
+              return LIGHT_THEME_TOKENS.colorText;
+            }
+            if (name === '--text-color-secondary') {
+              return LIGHT_THEME_TOKENS.colorTextSecondary;
+            }
+            if (name === '--border-color-base') {
+              return LIGHT_THEME_TOKENS.colorBorder;
+            }
+            return '';
+          },
+          backgroundColor: isRoot ? backgroundColor : backgroundColor,
+          color,
+        } as CSSStyleDeclaration;
+      });
+
+    const data = buildData({
+      webPage: { url: '', params: [] },
+      pluginId: 1,
+      embeddedId: 'uuid-theme-delayed',
+      supersetDomain: 'https://superset.example.com',
+    });
+    render(<SupersetChart id={1} data={data} />);
+    await waitFor(() => {
+      expect(embedDashboard).toHaveBeenCalled();
+    });
+    const instance = await embedDashboard.mock.results[0].value;
+
+    await Promise.resolve();
+    expect(instance.setThemeConfig).not.toHaveBeenCalled();
+    expect(instance.setThemeMode).not.toHaveBeenCalled();
+
+    ready = true;
+    jest.advanceTimersByTime(500);
+
+    await waitFor(() => {
+      expect(instance.setThemeMode).toHaveBeenCalledWith('default');
+    });
+    expect(instance.setThemeConfig).toHaveBeenCalledWith(
+      buildExpectedThemeConfig('default', LIGHT_THEME_TOKENS)
+    );
+
+    getComputedStyleSpy.mockRestore();
+    window.getComputedStyle = originalGetComputedStyle;
+  });
+
+  test('falls back to computed theme signature polling when no explicit theme switch hook exists', async () => {
+    jest.useFakeTimers();
+    const { embedDashboard } = require('@superset-ui/embedded-sdk');
+    const originalGetComputedStyle = window.getComputedStyle;
+    let currentTokens = { ...LIGHT_THEME_TOKENS };
+    const getComputedStyleSpy = jest
+      .spyOn(window, 'getComputedStyle')
+      .mockImplementation(() => {
+        return {
+          getPropertyValue: (name: string) => {
+            if (name === '--tme-primary-color') {
+              return currentTokens.colorPrimary;
+            }
+            if (name === '--component-background') {
+              return currentTokens.colorBgBase;
+            }
+            if (name === '--body-background') {
+              return currentTokens.colorBgLayout;
+            }
+            if (name === '--text-color') {
+              return currentTokens.colorText;
+            }
+            if (name === '--text-color-secondary') {
+              return currentTokens.colorTextSecondary;
+            }
+            if (name === '--border-color-base') {
+              return currentTokens.colorBorder;
+            }
+            return '';
+          },
+          backgroundColor: currentTokens.colorBgBase,
+          color: currentTokens.colorText,
+        } as CSSStyleDeclaration;
+      });
+
+    const data = buildData({
+      webPage: { url: '', params: [] },
+      pluginId: 1,
+      embeddedId: 'uuid-theme-polling',
+      supersetDomain: 'https://superset.example.com',
+    });
+    render(<SupersetChart id={1} data={data} />);
+    await waitFor(() => {
+      expect(embedDashboard).toHaveBeenCalled();
+    });
+    const instance = await embedDashboard.mock.results[0].value;
+    await waitFor(() => {
+      expect(instance.setThemeMode).toHaveBeenCalledWith('default');
+    });
+
+    currentTokens = { ...DARK_THEME_TOKENS };
+    jest.advanceTimersByTime(500);
+
+    await waitFor(() => {
+      expect(instance.setThemeMode).toHaveBeenLastCalledWith('dark');
+    });
+    expect(instance.setThemeConfig).toHaveBeenLastCalledWith(
+      buildExpectedThemeConfig('dark', DARK_THEME_TOKENS)
+    );
+
+    getComputedStyleSpy.mockRestore();
+    window.getComputedStyle = originalGetComputedStyle;
   });
 
   test('shows error when embed info missing', async () => {

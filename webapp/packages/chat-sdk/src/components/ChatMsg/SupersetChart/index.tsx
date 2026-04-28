@@ -37,10 +37,25 @@ const DEFAULT_HEIGHT = 800;
 const SUPERSET_IFRAME_TITLE = 'supersetIframe';
 const DEFAULT_THEME_MODE = 'default' as ThemeMode;
 const DARK_THEME_MODE = 'dark' as ThemeMode;
+const THEME_SIGNAL_POLL_INTERVAL = 250;
 
 type EmbedInstance = EmbeddedDashboard;
+type SupersetThemeTokens = Record<string, string>;
+type SupersetThemeAlgorithm = 'default' | 'dark';
+type SupersetThemeDefinition = {
+  algorithm?: SupersetThemeAlgorithm;
+  token?: SupersetThemeTokens;
+};
 type SupersetThemeConfig = {
-  token?: Record<string, string>;
+  theme_default?: SupersetThemeDefinition;
+  theme_dark?: SupersetThemeDefinition;
+};
+type SupersetResolvedTheme = {
+  backgroundColor?: string;
+  mode: ThemeMode;
+  ready: boolean;
+  signature: string;
+  themeConfig?: SupersetThemeConfig;
 };
 
 const SUPERSET_VIZTYPE_ZH_LABELS: Record<string, string> = {
@@ -260,21 +275,21 @@ function inferThemeModeFromBackgroundColor(backgroundColor?: string): ThemeMode 
   return brightness < 0.5 ? DARK_THEME_MODE : DEFAULT_THEME_MODE;
 }
 
-function resolveHostBackgroundColor(): string | undefined {
-  if (typeof window === 'undefined' || typeof document === 'undefined') {
+function resolveHostBackgroundColor(
+  rootStyle?: CSSStyleDeclaration,
+  bodyStyle?: CSSStyleDeclaration
+): string | undefined {
+  if (typeof window === 'undefined' || typeof document === 'undefined' || !rootStyle) {
     return undefined;
   }
-  const rootStyle = window.getComputedStyle(document.documentElement);
-  const bodyStyle = document.body ? window.getComputedStyle(document.body) : undefined;
   const candidates = [
     rootStyle.getPropertyValue('--component-background'),
     rootStyle.getPropertyValue('--body-background'),
     rootStyle.getPropertyValue('--light-background'),
     bodyStyle?.backgroundColor,
-    '#ffffff',
   ];
   const resolved = candidates.find(value => value && value.trim())?.trim();
-  return resolved || '#ffffff';
+  return resolved || undefined;
 }
 
 function readCssTokenValue(style: CSSStyleDeclaration | undefined, name: string): string | undefined {
@@ -282,20 +297,32 @@ function readCssTokenValue(style: CSSStyleDeclaration | undefined, name: string)
   return value || undefined;
 }
 
-function resolveHostThemeConfig(): SupersetThemeConfig | undefined {
-  if (typeof window === 'undefined' || typeof document === 'undefined') {
+function hasHostThemeVariableSignal(rootStyle?: CSSStyleDeclaration): boolean {
+  return Boolean(
+    readCssTokenValue(rootStyle, '--tme-primary-color') ||
+      readCssTokenValue(rootStyle, '--primary-color') ||
+      readCssTokenValue(rootStyle, '--component-background') ||
+      readCssTokenValue(rootStyle, '--body-background') ||
+      readCssTokenValue(rootStyle, '--text-color') ||
+      readCssTokenValue(rootStyle, '--text-color-secondary') ||
+      readCssTokenValue(rootStyle, '--border-color-base')
+  );
+}
+
+function resolveHostThemeTokens(
+  rootStyle?: CSSStyleDeclaration,
+  bodyStyle?: CSSStyleDeclaration
+): SupersetThemeTokens | undefined {
+  if (typeof window === 'undefined' || typeof document === 'undefined' || !rootStyle) {
     return undefined;
   }
-  const rootStyle = window.getComputedStyle(document.documentElement);
-  const bodyStyle = document.body ? window.getComputedStyle(document.body) : undefined;
   const primaryColor =
     readCssTokenValue(rootStyle, '--tme-primary-color') ||
     readCssTokenValue(rootStyle, '--primary-color');
   const backgroundColor =
     readCssTokenValue(rootStyle, '--component-background') ||
     readCssTokenValue(rootStyle, '--body-background') ||
-    bodyStyle?.backgroundColor?.trim() ||
-    '#ffffff';
+    bodyStyle?.backgroundColor?.trim();
   const layoutBackground =
     readCssTokenValue(rootStyle, '--body-background') ||
     readCssTokenValue(rootStyle, '--light-background') ||
@@ -316,28 +343,65 @@ function resolveHostThemeConfig(): SupersetThemeConfig | undefined {
       colorTextSecondary: secondaryTextColor,
       colorBorder: borderColor,
     }).filter(([, value]) => Boolean(value))
-  ) as Record<string, string>;
+  ) as SupersetThemeTokens;
   if (Object.keys(token).length === 0) {
     return undefined;
   }
-  return { token };
+  return token;
 }
 
-function resolveHostThemeMode(): ThemeMode {
+function resolveExplicitHostThemeMode(): ThemeMode | undefined {
   if (typeof document === 'undefined') {
-    return DEFAULT_THEME_MODE;
+    return undefined;
   }
   const docElement = document.documentElement;
-  const explicitMode =
+  return (
     normalizeThemeModeHint(docElement.getAttribute('data-theme') || undefined) ||
     normalizeThemeModeHint(docElement.dataset.theme) ||
     normalizeThemeModeHint(docElement.className) ||
-    normalizeThemeModeHint(document.body?.className);
+    normalizeThemeModeHint(document.body?.className)
+  );
+}
+
+function buildSupersetThemeDefinition(
+  algorithm: SupersetThemeAlgorithm,
+  token?: SupersetThemeTokens
+): SupersetThemeDefinition {
+  return token && Object.keys(token).length > 0 ? { algorithm, token } : { algorithm };
+}
+
+function resolveHostThemeConfig(
+  mode: ThemeMode,
+  token?: SupersetThemeTokens
+): SupersetThemeConfig | undefined {
+  const lightTheme = buildSupersetThemeDefinition(
+    'default',
+    mode === DEFAULT_THEME_MODE ? token : undefined
+  );
+  const darkTheme = buildSupersetThemeDefinition(
+    'dark',
+    mode === DARK_THEME_MODE ? token : undefined
+  );
+  return {
+    theme_default: lightTheme,
+    theme_dark: darkTheme,
+  };
+}
+
+function resolveHostThemeMode(): ThemeMode {
+  if (typeof document === 'undefined' || typeof window === 'undefined') {
+    return DEFAULT_THEME_MODE;
+  }
+  const explicitMode = resolveExplicitHostThemeMode();
   if (explicitMode) {
     return explicitMode;
   }
 
-  const inferredMode = inferThemeModeFromBackgroundColor(resolveHostBackgroundColor());
+  const rootStyle = window.getComputedStyle(document.documentElement);
+  const bodyStyle = document.body ? window.getComputedStyle(document.body) : undefined;
+  const inferredMode = inferThemeModeFromBackgroundColor(
+    resolveHostBackgroundColor(rootStyle, bodyStyle)
+  );
   if (inferredMode) {
     return inferredMode;
   }
@@ -348,6 +412,129 @@ function resolveHostThemeMode(): ThemeMode {
       : DEFAULT_THEME_MODE;
   }
   return DEFAULT_THEME_MODE;
+}
+
+function resolveHostThemeSnapshot(): SupersetResolvedTheme {
+  const mode = resolveHostThemeMode();
+  if (typeof window === 'undefined' || typeof document === 'undefined') {
+    return {
+      mode,
+      ready: false,
+      signature: `${mode}:server`,
+    };
+  }
+  const rootStyle = window.getComputedStyle(document.documentElement);
+  const bodyStyle = document.body ? window.getComputedStyle(document.body) : undefined;
+  const backgroundColor = resolveHostBackgroundColor(rootStyle, bodyStyle);
+  const token = resolveHostThemeTokens(rootStyle, bodyStyle);
+  const ready = hasHostThemeVariableSignal(rootStyle);
+  const themeConfig = ready ? resolveHostThemeConfig(mode, token) : undefined;
+  const signature = JSON.stringify({
+    backgroundColor: backgroundColor || '',
+    mode,
+    ready,
+    themeConfig: themeConfig || null,
+  });
+  return {
+    backgroundColor,
+    mode,
+    ready,
+    signature,
+    themeConfig,
+  };
+}
+
+const themeSignalListeners = new Set<(snapshot: SupersetResolvedTheme) => void>();
+let stopThemeSignalBridge: (() => void) | null = null;
+let lastThemeSignalSignature = '';
+
+function emitThemeSignal(force = false) {
+  const snapshot = resolveHostThemeSnapshot();
+  if (!force && snapshot.signature === lastThemeSignalSignature) {
+    return;
+  }
+  lastThemeSignalSignature = snapshot.signature;
+  themeSignalListeners.forEach(listener => listener(snapshot));
+}
+
+function stopThemeSignalWatchers() {
+  if (stopThemeSignalBridge) {
+    stopThemeSignalBridge();
+    stopThemeSignalBridge = null;
+  }
+  lastThemeSignalSignature = '';
+}
+
+function ensureThemeSignalBridge() {
+  if (stopThemeSignalBridge || typeof window === 'undefined' || typeof document === 'undefined') {
+    return;
+  }
+  const handleSignalChange = () => emitThemeSignal();
+  const observer = typeof MutationObserver === 'undefined'
+    ? null
+    : new MutationObserver(handleSignalChange);
+  const attributeFilter = ['data-theme', 'class', 'style'];
+  observer?.observe(document.documentElement, {
+    attributes: true,
+    attributeFilter,
+  });
+  if (document.body) {
+    observer?.observe(document.body, {
+      attributes: true,
+      attributeFilter,
+    });
+  }
+  if (document.head) {
+    observer?.observe(document.head, {
+      subtree: true,
+      childList: true,
+      attributes: true,
+      attributeFilter: ['disabled', 'href', 'media'],
+    });
+  }
+  const media = window.matchMedia?.('(prefers-color-scheme: dark)');
+  const onMediaChange = () => handleSignalChange();
+  if (media) {
+    if (typeof media.addEventListener === 'function') {
+      media.addEventListener('change', onMediaChange);
+    } else if (typeof media.addListener === 'function') {
+      media.addListener(onMediaChange);
+    }
+  }
+  const onWindowFocus = () => handleSignalChange();
+  const onVisibilityChange = () => handleSignalChange();
+  window.addEventListener('focus', onWindowFocus);
+  document.addEventListener('visibilitychange', onVisibilityChange);
+  const poller = window.setInterval(handleSignalChange, THEME_SIGNAL_POLL_INTERVAL);
+
+  stopThemeSignalBridge = () => {
+    observer?.disconnect();
+    window.clearInterval(poller);
+    window.removeEventListener('focus', onWindowFocus);
+    document.removeEventListener('visibilitychange', onVisibilityChange);
+    if (media) {
+      if (typeof media.removeEventListener === 'function') {
+        media.removeEventListener('change', onMediaChange);
+      } else if (typeof media.removeListener === 'function') {
+        media.removeListener(onMediaChange);
+      }
+    }
+  };
+}
+
+function subscribeThemeSignals(listener: (snapshot: SupersetResolvedTheme) => void) {
+  if (typeof window === 'undefined' || typeof document === 'undefined') {
+    return () => {};
+  }
+  ensureThemeSignalBridge();
+  themeSignalListeners.add(listener);
+  listener(resolveHostThemeSnapshot());
+  return () => {
+    themeSignalListeners.delete(listener);
+    if (themeSignalListeners.size === 0) {
+      stopThemeSignalWatchers();
+    }
+  };
 }
 
 const SupersetChart: React.FC<Props> = ({ id, data, triggerResize }) => {
@@ -362,6 +549,7 @@ const SupersetChart: React.FC<Props> = ({ id, data, triggerResize }) => {
   const [newDashboardTitle, setNewDashboardTitle] = useState('');
   const embedContainerRef = useRef<HTMLDivElement>(null);
   const embedInstanceRef = useRef<EmbedInstance | null>(null);
+  const appliedThemeSignatureRef = useRef<string>();
   const backgroundColorRef = useRef<string>();
   const response = data.response as SupersetChartResponseType;
   const webPage = response?.webPage;
@@ -524,31 +712,25 @@ const SupersetChart: React.FC<Props> = ({ id, data, triggerResize }) => {
   }, [pushModalOpen]);
 
   const resolveBackgroundColor = useCallback(() => {
-    return resolveHostBackgroundColor();
-  }, []);
-
-  const resolveThemeMode = useCallback((): ThemeMode => {
-    return resolveHostThemeMode();
-  }, []);
-
-  const resolveThemeConfig = useCallback((): SupersetThemeConfig | undefined => {
-    return resolveHostThemeConfig();
+    return resolveHostThemeSnapshot().backgroundColor;
   }, []);
 
   const syncTheme = useCallback(
     async (instance?: EmbedInstance | null) => {
-      const mode = resolveThemeMode();
-      const background = resolveBackgroundColor();
-      const themeConfig = resolveThemeConfig();
+      const snapshot = resolveHostThemeSnapshot();
+      const { backgroundColor: background, mode, ready, signature, themeConfig } = snapshot;
       backgroundColorRef.current = background;
       setBackgroundColor(background);
       const target = instance || embedInstanceRef.current;
-      if (target?.setThemeMode) {
-        try {
-          await target.setThemeMode(mode);
-        } catch (error) {
-          // ignore theme sync error to avoid blocking rendering
-        }
+      const iframe = embedContainerRef.current?.querySelector('iframe');
+      if (iframe && background) {
+        iframe.style.backgroundColor = background;
+      }
+      if (!ready || !target) {
+        return false;
+      }
+      if (appliedThemeSignatureRef.current === signature) {
+        return true;
       }
       if (target?.setThemeConfig && themeConfig) {
         try {
@@ -557,12 +739,17 @@ const SupersetChart: React.FC<Props> = ({ id, data, triggerResize }) => {
           // ignore theme sync error to avoid blocking rendering
         }
       }
-      const iframe = embedContainerRef.current?.querySelector('iframe');
-      if (iframe && background) {
-        iframe.style.backgroundColor = background;
+      if (target?.setThemeMode) {
+        try {
+          await target.setThemeMode(mode);
+        } catch (error) {
+          // ignore theme sync error to avoid blocking rendering
+        }
       }
+      appliedThemeSignatureRef.current = signature;
+      return true;
     },
-    [resolveBackgroundColor, resolveThemeConfig, resolveThemeMode]
+    []
   );
 
   const computeAvailableHeight = useCallback(() => {
@@ -721,6 +908,7 @@ const SupersetChart: React.FC<Props> = ({ id, data, triggerResize }) => {
       return;
     }
     let cancelled = false;
+    appliedThemeSignatureRef.current = undefined;
     embedInstanceRef.current?.unmount();
     embedInstanceRef.current = null;
     embedContainerRef.current.replaceChildren();
@@ -760,7 +948,7 @@ const SupersetChart: React.FC<Props> = ({ id, data, triggerResize }) => {
           return;
         }
         embedInstanceRef.current = instance;
-        syncTheme(instance);
+        void syncTheme(instance);
         const iframe = embedContainerRef.current?.querySelector('iframe');
         if (iframe) {
           iframe.style.width = '100%';
@@ -798,6 +986,7 @@ const SupersetChart: React.FC<Props> = ({ id, data, triggerResize }) => {
       cancelled = true;
       embedInstanceRef.current?.unmount();
       embedInstanceRef.current = null;
+      appliedThemeSignatureRef.current = undefined;
     };
   }, [embedInfo, resolveBackgroundColor, response?.pluginId, syncHeight, syncTheme]);
 
@@ -821,43 +1010,9 @@ const SupersetChart: React.FC<Props> = ({ id, data, triggerResize }) => {
   }, [syncHeight, triggerResize]);
 
   useEffect(() => {
-    if (typeof window === 'undefined' || typeof MutationObserver === 'undefined') {
-      return;
-    }
-    const handleThemeChange = () => {
-      syncTheme();
-    };
-    const observer = new MutationObserver(handleThemeChange);
-    observer.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ['data-theme', 'class', 'style'],
+    return subscribeThemeSignals(() => {
+      void syncTheme();
     });
-    if (document.body) {
-      observer.observe(document.body, {
-        attributes: true,
-        attributeFilter: ['data-theme', 'class', 'style'],
-      });
-    }
-    const media = window.matchMedia?.('(prefers-color-scheme: dark)');
-    if (media) {
-      const onMediaChange = () => handleThemeChange();
-      if (typeof media.addEventListener === 'function') {
-        media.addEventListener('change', onMediaChange);
-      } else if (typeof media.addListener === 'function') {
-        media.addListener(onMediaChange);
-      }
-      return () => {
-        observer.disconnect();
-        if (typeof media.removeEventListener === 'function') {
-          media.removeEventListener('change', onMediaChange);
-        } else if (typeof media.removeListener === 'function') {
-          media.removeListener(onMediaChange);
-        }
-      };
-    }
-    return () => {
-      observer.disconnect();
-    };
   }, [syncTheme]);
 
   return (
