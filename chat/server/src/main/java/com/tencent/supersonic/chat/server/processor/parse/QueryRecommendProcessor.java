@@ -43,8 +43,16 @@ public class QueryRecommendProcessor implements ParseResultProcessor {
     private void doProcess(ParseContext parseContext) {
         Long queryId = parseContext.getResponse().getQueryId();
         try {
-            List<Text2SQLExemplar> recalledExemplars = recallSimilarExemplars(
-                    parseContext.getRequest().getQueryText(), parseContext.getAgent().getId());
+            Integer agentId =
+                    parseContext.getAgent() == null ? null : parseContext.getAgent().getId();
+            List<Text2SQLExemplar> recalledExemplars = List.of();
+            try {
+                recalledExemplars =
+                        recallSimilarExemplars(parseContext.getRequest().getQueryText(), agentId);
+            } catch (Exception ex) {
+                log.warn("Failed to recall similar exemplars, fallback to history only, queryId={}",
+                        queryId, ex);
+            }
             List<String> historyQueries = getHistoryQueries(parseContext, queryId);
             List<SimilarQueryRecallResp> solvedQueries =
                     similarQueryGenerator.generate(parseContext.getRequest().getQueryText(),
@@ -79,8 +87,8 @@ public class QueryRecommendProcessor implements ParseResultProcessor {
     private void updateChatQuery(Long queryId, List<SimilarQueryRecallResp> similarQueries) {
         ChatQueryRepository chatQueryRepository = ContextUtils.getBean(ChatQueryRepository.class);
         UpdateWrapper<ChatQueryDO> updateWrapper = new UpdateWrapper<>();
-        updateWrapper.lambda().eq(ChatQueryDO::getQuestionId, queryId)
-                .set(ChatQueryDO::getSimilarQueries, JSONObject.toJSONString(similarQueries));
+        updateWrapper.eq("question_id", queryId).set("similar_queries",
+                JSONObject.toJSONString(similarQueries));
         chatQueryRepository.updateChatQuery(new ChatQueryDO(), updateWrapper);
     }
 }

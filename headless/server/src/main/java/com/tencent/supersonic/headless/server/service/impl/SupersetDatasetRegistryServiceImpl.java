@@ -897,11 +897,16 @@ public class SupersetDatasetRegistryServiceImpl
         }
         try {
             Select select = SqlSelectHelper.getSelect(sql);
-            if (select instanceof PlainSelect) {
-                return ((PlainSelect) select).getSelectItems();
+            if (select == null) {
+                return Collections.emptyList();
             }
-            if (select instanceof SetOperationList) {
-                List<Select> selects = ((SetOperationList) select).getSelects();
+            PlainSelect plainSelect = select.getPlainSelect();
+            if (plainSelect != null) {
+                return plainSelect.getSelectItems();
+            }
+            SetOperationList setOperationList = select.getSetOperationList();
+            if (setOperationList != null) {
+                List<Select> selects = setOperationList.getSelects();
                 if (!CollectionUtils.isEmpty(selects) && selects.get(0) instanceof PlainSelect) {
                     return ((PlainSelect) selects.get(0)).getSelectItems();
                 }
@@ -995,11 +1000,17 @@ public class SupersetDatasetRegistryServiceImpl
             return null;
         }
         SchemaElement matched = lookup.get(normalizeName(outputName));
+        if (matched == null) {
+            matched = lookup.get(normalizeAliasName(outputName));
+        }
         if (matched != null || CollectionUtils.isEmpty(sourceFields)) {
             return matched;
         }
         for (String sourceField : sourceFields) {
             matched = lookup.get(normalizeName(sourceField));
+            if (matched == null) {
+                matched = lookup.get(normalizeAliasName(sourceField));
+            }
             if (matched != null) {
                 return matched;
             }
@@ -1075,6 +1086,10 @@ public class SupersetDatasetRegistryServiceImpl
 
     private String normalizeName(String name) {
         return StringUtils.lowerCase(StringUtils.trimToEmpty(name));
+    }
+
+    private String normalizeAliasName(String name) {
+        return normalizeName(StringUtils.stripStart(name, "_"));
     }
 
     private boolean isNumericType(String type) {

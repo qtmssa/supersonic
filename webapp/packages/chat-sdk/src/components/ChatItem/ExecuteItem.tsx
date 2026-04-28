@@ -56,10 +56,9 @@ const ExecuteItem: React.FC<Props> = ({
         ? '问答'
         : '数据';
   const supersetResponse = data?.response as SupersetChartResponseType | undefined;
-  const canRenderSuperset =
-    data?.queryMode === 'SUPERSET' &&
-    supersetResponse &&
-    !supersetResponse.fallback;
+  const canRenderSuperset = Boolean(
+    supersetResponse?.pluginType === 'SUPERSET' && !supersetResponse?.fallback
+  );
 
   const getNodeTip = (title: ReactNode, tip?: string | ReactNode) => {
     return (

@@ -11,6 +11,8 @@ public class SupersetChartBuildRequest {
 
     private String vizName;
 
+    private String titleHint;
+
     private String chartName;
 
     private Integer dashboardHeight;

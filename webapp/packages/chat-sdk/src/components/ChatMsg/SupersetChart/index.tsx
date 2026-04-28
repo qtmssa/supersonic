@@ -506,8 +506,10 @@ const SupersetChart: React.FC<Props> = ({ id, data, triggerResize }) => {
   }, [activeView?.embeddedId, activeView?.supersetDomain, response?.embeddedId, response?.supersetDomain]);
 
   const canPushCurrentChart = Boolean(activeView?.chartId && response?.pluginId);
-  const showSummary =
-    interactiveViewCandidates.length > 0 || rawCandidateLabels.length > 0 || canPushCurrentChart;
+  const showViewSwitcher = interactiveViewCandidates.length > 1;
+  const showRawCandidateLabels =
+    !showViewSwitcher && interactiveViewCandidates.length === 0 && rawCandidateLabels.length > 1;
+  const showSummary = showViewSwitcher || showRawCandidateLabels || canPushCurrentChart;
 
   useEffect(() => {
     setHeight(activeMinHeight);
@@ -881,7 +883,7 @@ const SupersetChart: React.FC<Props> = ({ id, data, triggerResize }) => {
               gap: 8,
             }}
           >
-            {interactiveViewCandidates.length > 0 && (
+            {showViewSwitcher && (
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, flex: '1 1 auto' }}>
                 {viewCandidates.map(view => (
                   <Button
@@ -895,7 +897,7 @@ const SupersetChart: React.FC<Props> = ({ id, data, triggerResize }) => {
                 ))}
               </div>
             )}
-            {interactiveViewCandidates.length === 0 && rawCandidateLabels.length > 0 && (
+            {showRawCandidateLabels && (
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, flex: '1 1 auto' }}>
                 {rawCandidateLabels.map(item => (
                   <span

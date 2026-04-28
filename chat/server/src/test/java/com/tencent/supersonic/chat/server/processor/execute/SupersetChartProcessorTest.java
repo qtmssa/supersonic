@@ -3,6 +3,7 @@ package com.tencent.supersonic.chat.server.processor.execute;
 import com.alibaba.fastjson.JSONObject;
 import com.tencent.supersonic.chat.api.pojo.request.ChatExecuteReq;
 import com.tencent.supersonic.chat.api.pojo.response.QueryResult;
+import com.tencent.supersonic.chat.server.plugin.ChatPlugin;
 import com.tencent.supersonic.chat.server.plugin.build.ParamOption;
 import com.tencent.supersonic.chat.server.plugin.build.superset.SupersetChartCandidate;
 import com.tencent.supersonic.chat.server.plugin.build.superset.SupersetChartInfo;
@@ -17,6 +18,7 @@ import com.tencent.supersonic.common.pojo.DateConf;
 import com.tencent.supersonic.common.pojo.Order;
 import com.tencent.supersonic.common.pojo.QueryColumn;
 import com.tencent.supersonic.common.pojo.enums.DatePeriodEnum;
+import com.tencent.supersonic.common.pojo.enums.QueryType;
 import com.tencent.supersonic.common.service.ChatModelService;
 import com.tencent.supersonic.common.util.ContextUtils;
 import com.tencent.supersonic.headless.api.pojo.SchemaElement;
@@ -42,10 +44,26 @@ import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
 public class SupersetChartProcessorTest {
+
+    @Test
+    public void testAcceptSkipsDetailQuery() {
+        SupersetChartProcessor processor = new SupersetChartProcessor();
+        ExecuteContext executeContext = new ExecuteContext(ChatExecuteReq.builder().queryId(1L).build());
+        QueryResult queryResult = new QueryResult();
+        queryResult.setQueryState(com.tencent.supersonic.headless.api.pojo.response.QueryState.SUCCESS);
+        queryResult.setQueryMode("DETAIL_DIMENSION");
+        executeContext.setResponse(queryResult);
+        SemanticParseInfo parseInfo = new SemanticParseInfo();
+        parseInfo.setQueryType(QueryType.DETAIL);
+        executeContext.setParseInfo(parseInfo);
+
+        Assertions.assertFalse(processor.accept(executeContext));
+    }
 
     @Test
     public void testBuildFormDataTableUsesDatasetColumns() {
@@ -205,6 +223,158 @@ public class SupersetChartProcessorTest {
     }
 
     @Test
+    public void testBuildChartNameFallsBackToChineseSemanticTitleWhenQueryTextMissing()
+            throws Exception {
+        SupersetChartProcessor processor = new SupersetChartProcessor();
+        ExecuteContext executeContext =
+                new ExecuteContext(ChatExecuteReq.builder().queryId(99L).queryText("   ").build());
+        SemanticParseInfo parseInfo = new SemanticParseInfo();
+        parseInfo.getMetrics().add(SchemaElement.builder().bizName("pv").name("访问次数").build());
+        parseInfo.getDimensions()
+                .add(SchemaElement.builder().bizName("imp_date").name("数据日期").build());
+        executeContext.setParseInfo(parseInfo);
+        ChatPlugin plugin = Mockito.mock(ChatPlugin.class);
+        Mockito.when(plugin.getName()).thenReturn("Superset");
+
+        Method method = SupersetChartProcessor.class.getDeclaredMethod("buildChartName",
+                ExecuteContext.class, ChatPlugin.class);
+        method.setAccessible(true);
+        String chartName = (String) method.invoke(processor, executeContext, plugin);
+
+        Assertions.assertTrue(chartName.matches(".*[\\u4e00-\\u9fff].*"));
+        Assertions.assertFalse(chartName.startsWith("Superset"));
+        Assertions.assertTrue(chartName.endsWith("_99"));
+    }
+
+    @Test
+    public void testBuildDashboardTitleFallsBackToChineseSemanticTitleWhenQueryTextMissing()
+            throws Exception {
+        SupersetChartProcessor processor = new SupersetChartProcessor();
+        ExecuteContext executeContext =
+                new ExecuteContext(ChatExecuteReq.builder().queryId(101L).queryText("").build());
+        SemanticParseInfo parseInfo = new SemanticParseInfo();
+        parseInfo.getMetrics().add(SchemaElement.builder().bizName("gmv").name("销售额").build());
+        parseInfo.getDimensions()
+                .add(SchemaElement.builder().bizName("biz_date").name("日期").build());
+        executeContext.setParseInfo(parseInfo);
+
+        Method method = SupersetChartProcessor.class.getDeclaredMethod("buildDashboardTitle",
+                ExecuteContext.class, String.class);
+        method.setAccessible(true);
+        String dashboardTitle = (String) method.invoke(processor, executeContext, "Superset_101");
+
+        Assertions.assertTrue(dashboardTitle.matches(".*[\\u4e00-\\u9fff].*"));
+        Assertions.assertFalse(dashboardTitle.contains("Superset"));
+        Assertions.assertFalse(dashboardTitle.contains("View"));
+    }
+
+    @Test
+    public void testBuildChartNameFallsBackToDefaultChineseWhenOnlyEnglishInputsAvailable()
+            throws Exception {
+        SupersetChartProcessor processor = new SupersetChartProcessor();
+        ExecuteContext executeContext = new ExecuteContext(
+                ChatExecuteReq.builder().queryId(102L).queryText("sales trend").build());
+        SemanticParseInfo parseInfo = new SemanticParseInfo();
+        parseInfo.getMetrics().add(SchemaElement.builder().bizName("gmv").name("gmv").build());
+        parseInfo.getDimensions()
+                .add(SchemaElement.builder().bizName("biz_date").name("biz_date").build());
+        executeContext.setParseInfo(parseInfo);
+        ChatPlugin plugin = Mockito.mock(ChatPlugin.class);
+        Mockito.when(plugin.getName()).thenReturn("Superset");
+
+        String chartName = invokeBuildChartName(processor, executeContext, plugin);
+
+        Assertions.assertEquals("图表_102", chartName);
+    }
+
+    @Test
+    public void testBuildChartNameFallsBackToChinesePluginNameWhenSemanticTitleUnavailable()
+            throws Exception {
+        SupersetChartProcessor processor = new SupersetChartProcessor();
+        ExecuteContext executeContext = new ExecuteContext(
+                ChatExecuteReq.builder().queryId(106L).queryText("sales trend").build());
+        SemanticParseInfo parseInfo = new SemanticParseInfo();
+        parseInfo.getMetrics().add(SchemaElement.builder().bizName("gmv").name("gmv").build());
+        parseInfo.getDimensions()
+                .add(SchemaElement.builder().bizName("biz_date").name("biz_date").build());
+        executeContext.setParseInfo(parseInfo);
+        ChatPlugin plugin = Mockito.mock(ChatPlugin.class);
+        Mockito.when(plugin.getName()).thenReturn("经营分析插件");
+
+        String chartName = invokeBuildChartName(processor, executeContext, plugin);
+
+        Assertions.assertEquals("经营分析插件_106", chartName);
+    }
+
+    @Test
+    public void testBuildDashboardTitleReusesChineseFallbackWhenSemanticTitleUnavailable()
+            throws Exception {
+        SupersetChartProcessor processor = new SupersetChartProcessor();
+        ExecuteContext executeContext = new ExecuteContext(
+                ChatExecuteReq.builder().queryId(103L).queryText("sales trend").build());
+        SemanticParseInfo parseInfo = new SemanticParseInfo();
+        parseInfo.getMetrics().add(SchemaElement.builder().bizName("gmv").name("gmv").build());
+        parseInfo.getDimensions()
+                .add(SchemaElement.builder().bizName("biz_date").name("biz_date").build());
+        executeContext.setParseInfo(parseInfo);
+
+        String dashboardTitle = invokeBuildDashboardTitle(processor, executeContext, "经营分析看板");
+
+        Assertions.assertEquals("经营分析看板", dashboardTitle);
+    }
+
+    @Test
+    public void testResolvePreferredChartTitleUsesBoundMetricLabelsForMultipleMetrics()
+            throws Exception {
+        SupersetChartProcessor processor = new SupersetChartProcessor();
+        ExecuteContext executeContext =
+                new ExecuteContext(ChatExecuteReq.builder().queryId(104L).queryText("").build());
+        SemanticParseInfo parseInfo = new SemanticParseInfo();
+        parseInfo.getMetrics().add(SchemaElement.builder().bizName("uv").name("uv").build());
+        parseInfo.getMetrics().add(SchemaElement.builder().bizName("gmv").name("gmv").build());
+        parseInfo.getDimensions()
+                .add(SchemaElement.builder().bizName("biz_date").name("biz_date").build());
+        executeContext.setParseInfo(parseInfo);
+        QueryResult queryResult = new QueryResult();
+        queryResult.setQueryColumns(Arrays.asList(new QueryColumn("访问用户数", "BIGINT", "uv"),
+                new QueryColumn("销售额", "DECIMAL", "gmv"),
+                new QueryColumn("数据日期", "DATE", "biz_date")));
+        Map<String, Object> formData = new HashMap<>();
+        formData.put("metrics", Arrays.asList("uv", "gmv"));
+        formData.put("granularity_sqla", "biz_date");
+
+        String title = invokeResolvePreferredChartTitle(processor, executeContext, queryResult,
+                formData, null);
+
+        Assertions.assertEquals("访问用户数 / 销售额", title);
+    }
+
+    @Test
+    public void testResolvePreferredChartTitleUsesBoundDimensionLabelsForMultipleDimensions()
+            throws Exception {
+        SupersetChartProcessor processor = new SupersetChartProcessor();
+        ExecuteContext executeContext =
+                new ExecuteContext(ChatExecuteReq.builder().queryId(105L).queryText("  ").build());
+        SemanticParseInfo parseInfo = new SemanticParseInfo();
+        parseInfo.getDimensions()
+                .add(SchemaElement.builder().bizName("region").name("region").build());
+        parseInfo.getDimensions()
+                .add(SchemaElement.builder().bizName("category").name("category").build());
+        executeContext.setParseInfo(parseInfo);
+        QueryResult queryResult = new QueryResult();
+        queryResult.setQueryColumns(Arrays.asList(new QueryColumn("区域", "STRING", "region"),
+                new QueryColumn("品类", "STRING", "category")));
+        Map<String, Object> formData = new HashMap<>();
+        formData.put("x_axis", "region");
+        formData.put("y_axis", "category");
+
+        String title = invokeResolvePreferredChartTitle(processor, executeContext, queryResult,
+                formData, null);
+
+        Assertions.assertEquals("区域 / 品类", title);
+    }
+
+    @Test
     public void testBuildFormDataPivotTableUsesPivotKeys() {
         SupersetChartProcessor processor = new SupersetChartProcessor();
         SupersetPluginConfig config = buildConfig();
@@ -249,6 +419,101 @@ public class SupersetChartProcessorTest {
         Assertions.assertEquals("ds", formData.get("granularity_sqla"));
         Assertions.assertEquals(Collections.singletonList("amount"), formData.get("metrics"));
         Assertions.assertEquals(Collections.singletonList("region"), formData.get("groupby"));
+    }
+
+    @Test
+    public void testBuildFormDataTimeSeriesMultiUsesChineseAxisTitles() {
+        SupersetChartProcessor processor = new SupersetChartProcessor();
+        SupersetPluginConfig config = buildConfig();
+        SemanticParseInfo parseInfo = new SemanticParseInfo();
+        parseInfo.getMetrics()
+                .add(SchemaElement.builder().bizName("order_cnt").name("订单量").build());
+        parseInfo.getMetrics()
+                .add(SchemaElement.builder().bizName("sales_amount").name("成交金额").build());
+        parseInfo.getDimensions().add(SchemaElement.builder().bizName("ds").name("日期").build());
+        SupersetDatasetInfo datasetInfo = new SupersetDatasetInfo();
+        datasetInfo.setColumns(Arrays.asList(buildColumn("ds", "DATE", true, true),
+                buildColumn("order_cnt", "BIGINT", false, false),
+                buildColumn("sales_amount", "DECIMAL", false, false)));
+        datasetInfo
+                .setMetrics(Arrays.asList(buildMetric("order_cnt"), buildMetric("sales_amount")));
+
+        Map<String, Object> formData = processor.buildFormData(config, parseInfo, null, datasetInfo,
+                "mixed_timeseries", null, null);
+
+        Assertions.assertEquals("日期", formData.get("x_axis_title"));
+        Assertions.assertEquals("订单量 / 成交金额", formData.get("y_axis_title"));
+        Assertions.assertEquals(false, formData.get("show_title"));
+        Assertions.assertEquals(false, formData.get("show_chart_title"));
+    }
+
+    @Test
+    public void testBuildFormDataHeatmapUsesChineseAxisTitles() {
+        SupersetChartProcessor processor = new SupersetChartProcessor();
+        SupersetPluginConfig config = buildConfig();
+        SemanticParseInfo parseInfo = new SemanticParseInfo();
+        parseInfo.getMetrics().add(SchemaElement.builder().bizName("amount").name("金额").build());
+        parseInfo.getDimensions().add(SchemaElement.builder().bizName("region").name("区域").build());
+        parseInfo.getDimensions()
+                .add(SchemaElement.builder().bizName("category").name("品类").build());
+        SupersetDatasetInfo datasetInfo = new SupersetDatasetInfo();
+        datasetInfo.setColumns(Arrays.asList(buildColumn("region", "STRING", true, false),
+                buildColumn("category", "STRING", true, false),
+                buildColumn("amount", "DECIMAL", false, false)));
+        datasetInfo.setMetrics(Collections.singletonList(buildMetric("amount")));
+
+        Map<String, Object> formData = processor.buildFormData(config, parseInfo, null, datasetInfo,
+                "heatmap_v2", null, null);
+
+        Assertions.assertEquals("区域", formData.get("x_axis_title"));
+        Assertions.assertEquals("品类", formData.get("y_axis_title"));
+        Assertions.assertEquals(false, formData.get("show_title"));
+        Assertions.assertEquals(false, formData.get("show_chart_title"));
+    }
+
+    @Test
+    public void testBuildFormDataHistogramUsesChineseAxisTitles() {
+        SupersetChartProcessor processor = new SupersetChartProcessor();
+        SupersetPluginConfig config = buildConfig();
+        SemanticParseInfo parseInfo = new SemanticParseInfo();
+        parseInfo.getDimensions().add(SchemaElement.builder().bizName("region").name("区域").build());
+        SupersetDatasetInfo datasetInfo = new SupersetDatasetInfo();
+        datasetInfo.setColumns(Arrays.asList(buildColumn("region", "STRING", true, false),
+                buildColumn("age", "INT", false, false)));
+
+        QueryResult queryResult = new QueryResult();
+        queryResult.setQueryColumns(Arrays.asList(new QueryColumn("区域", "STRING", "region"),
+                new QueryColumn("年龄", "INT", "age")));
+
+        Map<String, Object> formData = processor.buildFormData(config, parseInfo, queryResult,
+                datasetInfo, "histogram_v2", null, null);
+
+        Assertions.assertEquals("年龄", formData.get("x_axis_title"));
+        Assertions.assertEquals(false, formData.get("show_title"));
+        Assertions.assertEquals(false, formData.get("show_chart_title"));
+    }
+
+    @Test
+    public void testBuildFormDataBubbleUsesChineseAxisTitles() {
+        SupersetChartProcessor processor = new SupersetChartProcessor();
+        SupersetPluginConfig config = buildConfig();
+        SupersetDatasetInfo datasetInfo = new SupersetDatasetInfo();
+        datasetInfo.setColumns(Arrays.asList(buildColumn("price", "DECIMAL", false, false),
+                buildColumn("quantity", "BIGINT", false, false),
+                buildColumn("amount", "DECIMAL", false, false)));
+        datasetInfo.setMetrics(Collections.singletonList(buildMetric("amount")));
+        QueryResult queryResult = new QueryResult();
+        queryResult.setQueryColumns(Arrays.asList(new QueryColumn("单价", "DECIMAL", "price"),
+                new QueryColumn("销量", "BIGINT", "quantity"),
+                new QueryColumn("金额", "DECIMAL", "amount")));
+
+        Map<String, Object> formData = processor.buildFormData(config, null, queryResult,
+                datasetInfo, "bubble", null, null);
+
+        Assertions.assertEquals("单价", formData.get("x_axis_title"));
+        Assertions.assertEquals("销量", formData.get("y_axis_title"));
+        Assertions.assertEquals(false, formData.get("show_title"));
+        Assertions.assertEquals(false, formData.get("show_chart_title"));
     }
 
     @Test
@@ -710,14 +975,16 @@ public class SupersetChartProcessorTest {
                         buildVizTypeItem("echarts_timeseries_bar", "Bar Chart"),
                         buildVizTypeItem("pie", "Pie Chart"), buildVizTypeItem("table", "Table"),
                         buildVizTypeItem("bubble", "Bubble Chart"));
+        ChatPlugin plugin = Mockito.mock(ChatPlugin.class);
+        Mockito.when(plugin.getName()).thenReturn("Superset");
 
         Method method = SupersetChartProcessor.class.getDeclaredMethod("buildChartRequests",
-                List.class, String.class, SupersetPluginConfig.class, ExecuteContext.class,
-                QueryResult.class, SupersetDatasetInfo.class);
+                List.class, SupersetPluginConfig.class, ExecuteContext.class, QueryResult.class,
+                SupersetDatasetInfo.class, ChatPlugin.class);
         method.setAccessible(true);
         @SuppressWarnings("unchecked")
-        List<Object> requests = (List<Object>) method.invoke(processor, candidates, "各品牌历年收入趋势_9",
-                config, executeContext, queryResult, datasetInfo);
+        List<Object> requests = (List<Object>) method.invoke(processor, candidates, config,
+                executeContext, queryResult, datasetInfo, plugin);
 
         Assertions.assertEquals(4, requests.size());
         Assertions.assertEquals("echarts_timeseries_line",
@@ -732,6 +999,7 @@ public class SupersetChartProcessorTest {
         Assertions.assertEquals("数据表", invokeGetter(requests.get(3), "getVizName"));
         Assertions.assertTrue(String.valueOf(invokeGetter(requests.get(0), "getChartName"))
                 .startsWith("折线图_各品牌历年收入趋势"));
+        Assertions.assertEquals("各品牌历年收入趋势", invokeGetter(requests.get(0), "getTitleHint"));
     }
 
     @Test
@@ -861,6 +1129,31 @@ public class SupersetChartProcessorTest {
                 ExecuteContext.class, String.class, QueryResult.class);
         method.setAccessible(true);
         return (SupersetDatasetInfo) method.invoke(processor, executeContext, sql, queryResult);
+    }
+
+    private String invokeBuildChartName(SupersetChartProcessor processor,
+            ExecuteContext executeContext, ChatPlugin plugin) throws Exception {
+        Method method = SupersetChartProcessor.class.getDeclaredMethod("buildChartName",
+                ExecuteContext.class, ChatPlugin.class);
+        method.setAccessible(true);
+        return (String) method.invoke(processor, executeContext, plugin);
+    }
+
+    private String invokeBuildDashboardTitle(SupersetChartProcessor processor,
+            ExecuteContext executeContext, String fallback) throws Exception {
+        Method method = SupersetChartProcessor.class.getDeclaredMethod("buildDashboardTitle",
+                ExecuteContext.class, String.class);
+        method.setAccessible(true);
+        return (String) method.invoke(processor, executeContext, fallback);
+    }
+
+    private String invokeResolvePreferredChartTitle(SupersetChartProcessor processor,
+            ExecuteContext executeContext, QueryResult queryResult, Map<String, Object> formData,
+            ChatPlugin plugin) throws Exception {
+        Method method = SupersetChartProcessor.class.getDeclaredMethod("resolvePreferredChartTitle",
+                ExecuteContext.class, QueryResult.class, Map.class, ChatPlugin.class);
+        method.setAccessible(true);
+        return (String) method.invoke(processor, executeContext, queryResult, formData, plugin);
     }
 
     @SuppressWarnings({"unchecked", "rawtypes"})

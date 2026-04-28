@@ -135,6 +135,11 @@ const ChatItem: React.FC<Props> = ({
     let data: MsgDataType | undefined = undefined;
     const { queryColumns, queryResults, queryState, queryMode, response, chatContext, errorMsg } =
       res.data || {};
+    const isSupersetResponse =
+      response &&
+      typeof response === 'object' &&
+      (response as Record<string, unknown>).pluginType === 'SUPERSET' &&
+      !(response as Record<string, unknown>).fallback;
     const exposeError = isDeveloper || isDebugMode;
     setExecuteErrorMsg(errorMsg);
     if (res.code === 400 || res.code === 401 || res.code === 412) {
@@ -149,6 +154,7 @@ const ChatItem: React.FC<Props> = ({
       }
     } else if (
       (queryColumns && queryColumns.length > 0 && queryResults) ||
+      isSupersetResponse ||
       queryMode === 'SUPERSET' ||
       queryMode === 'WEB_PAGE' ||
       queryMode === 'WEB_SERVICE' ||

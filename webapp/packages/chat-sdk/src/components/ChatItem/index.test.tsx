@@ -56,7 +56,7 @@ describe('ChatItem', () => {
         msgData={
           {
             queryId: 66,
-            queryMode: 'SUPERSET',
+            queryMode: 'METRIC_GROUPBY',
             queryState: 'SUCCESS',
             queryColumns: [],
             queryResults: [],
@@ -87,7 +87,7 @@ describe('ChatItem', () => {
     await waitFor(() => {
       const executeItem = screen.getByTestId('execute-item');
       expect(executeItem).toHaveAttribute('data-has-data', 'true');
-      expect(executeItem).toHaveAttribute('data-query-mode', 'SUPERSET');
+      expect(executeItem).toHaveAttribute('data-query-mode', 'METRIC_GROUPBY');
       expect(executeItem).toHaveAttribute('data-execute-tip', '');
     });
   });

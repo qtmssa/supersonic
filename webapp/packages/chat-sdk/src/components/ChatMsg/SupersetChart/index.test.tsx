@@ -163,6 +163,35 @@ describe('SupersetChart', () => {
     expect(screen.getByText('推送到看板')).toBeTruthy();
   });
 
+  test('hides single-chart summary label while keeping push action', async () => {
+    const { embedDashboard } = require('@superset-ui/embedded-sdk');
+    embedDashboard.mockClear();
+    const data = buildData({
+      webPage: { url: '', params: [] },
+      pluginId: 1,
+      dashboardId: 88,
+      dashboardTitle: '访问趋势分析',
+      embeddedId: 'embed-line',
+      supersetDomain: 'https://superset.example.com',
+      vizTypeCandidates: [
+        {
+          vizType: 'echarts_timeseries_line',
+          vizName: 'Line Chart',
+          embeddedId: 'embed-line',
+          supersetDomain: 'https://superset.example.com',
+          chartId: 11,
+        },
+      ],
+    });
+    render(<SupersetChart id={1} data={data} />);
+    await waitFor(() => {
+      expect(embedDashboard).toHaveBeenCalledTimes(1);
+    });
+    expect(screen.getByText('推送到看板')).toBeTruthy();
+    expect(screen.queryByText('折线图')).toBeNull();
+    expect(screen.queryByText('Line Chart')).toBeNull();
+  });
+
   test('prefers final dashboard embed when candidates only describe child charts', async () => {
     const { embedDashboard } = require('@superset-ui/embedded-sdk');
     embedDashboard.mockClear();

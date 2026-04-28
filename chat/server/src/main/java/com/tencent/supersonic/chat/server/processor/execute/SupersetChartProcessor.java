@@ -25,6 +25,7 @@ import com.tencent.supersonic.common.pojo.DateConf;
 import com.tencent.supersonic.common.pojo.Order;
 import com.tencent.supersonic.common.pojo.QueryColumn;
 import com.tencent.supersonic.common.pojo.enums.DatePeriodEnum;
+import com.tencent.supersonic.common.pojo.enums.QueryType;
 import com.tencent.supersonic.common.service.ChatModelService;
 import com.tencent.supersonic.common.util.ContextUtils;
 import com.tencent.supersonic.common.util.JsonUtil;
@@ -137,6 +138,9 @@ public class SupersetChartProcessor implements ExecuteResultProcessor {
         if (!QueryState.SUCCESS.equals(queryResult.getQueryState())) {
             return false;
         }
+        if (QueryType.DETAIL.equals(executeContext.getParseInfo().getQueryType())) {
+            return false;
+        }
         String queryMode = queryResult.getQueryMode();
         return !StringUtils.equalsAnyIgnoreCase(queryMode, "WEB_PAGE", "WEB_SERVICE", "PLAIN_TEXT");
     }
@@ -186,7 +190,6 @@ public class SupersetChartProcessor implements ExecuteResultProcessor {
                     "superset fallback: invalid config, pluginId={}, hasSql={}, baseUrl={}, authOk={}",
                     plugin.getId(), StringUtils.isNotBlank(sql), config.getBaseUrl(),
                     config.hasValidAuthConfig());
-            queryResult.setQueryMode(QUERY_MODE);
             queryResult.setResponse(response);
             return;
         }
@@ -200,7 +203,6 @@ public class SupersetChartProcessor implements ExecuteResultProcessor {
             log.debug("superset fallback: dataset unresolved, pluginId={}, dataSetId={}",
                     plugin.getId(), executeContext.getParseInfo() == null ? null
                             : executeContext.getParseInfo().getDataSetId());
-            queryResult.setQueryMode(QUERY_MODE);
             queryResult.setResponse(response);
             return;
         }
@@ -215,16 +217,17 @@ public class SupersetChartProcessor implements ExecuteResultProcessor {
         response.setVizType(vizType);
         try {
             SupersetApiClient client = new SupersetApiClient(config);
-            String chartName = buildChartName(executeContext, plugin);
-            String dashboardTitle = buildDashboardTitle(executeContext, chartName);
-            log.debug("superset build chart start, pluginId={}, vizType={}, chartName={}",
-                    plugin.getId(), vizType, chartName);
             List<String> dashboardTags = buildDashboardTags(executeContext);
             List<SupersetChartBuildRequest> chartRequests = buildChartRequests(vizTypeCandidates,
-                    chartName, config, executeContext, queryResult, datasetInfo);
+                    config, executeContext, queryResult, datasetInfo, plugin);
             if (chartRequests.isEmpty()) {
                 throw new IllegalStateException("superset chart build failed");
             }
+            String chartName = chartRequests.get(0).getChartName();
+            String dashboardTitle =
+                    buildDashboardTitle(executeContext, chartRequests.get(0).getTitleHint());
+            log.debug("superset build chart start, pluginId={}, vizType={}, chartName={}",
+                    plugin.getId(), vizType, chartName);
             List<SupersetChartCandidate> chartCandidates =
                     buildEmbeddedChartCandidates(client, dashboardTitle, chartRequests, sql,
                             datasetId, databaseId, schema, dashboardTags, config);
@@ -243,7 +246,6 @@ public class SupersetChartProcessor implements ExecuteResultProcessor {
             response.setFallbackReason(ex.getMessage());
             log.debug("superset fallback: {}", ex.getMessage());
         }
-        queryResult.setQueryMode(QUERY_MODE);
         queryResult.setResponse(response);
         log.debug("superset process complete, queryId={}, fallback={}",
                 executeContext.getRequest().getQueryId(), response.isFallback());
@@ -820,26 +822,174 @@ public class SupersetChartProcessor implements ExecuteResultProcessor {
     }
 
     private String buildChartName(ExecuteContext executeContext, ChatPlugin plugin) {
+        return buildChartName(resolvePreferredChartTitle(executeContext, null, null, plugin),
+                executeContext);
+    }
+
+    private String buildChartName(String readableName, ExecuteContext executeContext) {
         Long queryId = executeContext.getRequest().getQueryId();
         String suffix =
                 queryId == null ? String.valueOf(System.currentTimeMillis()) : queryId.toString();
-        String queryText = executeContext == null || executeContext.getRequest() == null ? null
-                : sanitizeChartName(executeContext.getRequest().getQueryText());
-        String readableName = StringUtils.defaultIfBlank(queryText,
-                StringUtils.defaultIfBlank(
-                        sanitizeChartName(plugin == null ? null : plugin.getName()),
-                        DEFAULT_CHART_ZH_NAME));
         return readableName + "_" + suffix;
     }
 
     private String buildDashboardTitle(ExecuteContext executeContext, String fallback) {
-        if (executeContext != null && executeContext.getRequest() != null) {
-            String queryText = StringUtils.trimToEmpty(executeContext.getRequest().getQueryText());
-            if (StringUtils.isNotBlank(queryText)) {
-                return queryText;
+        String queryText = executeContext == null || executeContext.getRequest() == null ? null
+                : sanitizeChartName(executeContext.getRequest().getQueryText());
+        if (containsChineseText(queryText)) {
+            return queryText;
+        }
+        String normalizedFallback = normalizeGeneratedChartTitle(fallback);
+        if (containsChineseText(normalizedFallback)) {
+            return normalizedFallback;
+        }
+        return DEFAULT_CHART_ZH_NAME;
+    }
+
+    private String resolvePreferredChartTitle(ExecuteContext executeContext,
+            QueryResult queryResult, Map<String, Object> formData, ChatPlugin plugin) {
+        String queryText = executeContext == null || executeContext.getRequest() == null ? null
+                : sanitizeChartName(executeContext.getRequest().getQueryText());
+        if (containsChineseText(queryText)) {
+            return queryText;
+        }
+        String semanticTitle = resolveSemanticChartTitle(
+                executeContext == null ? null : executeContext.getParseInfo(), queryResult,
+                formData);
+        if (StringUtils.isNotBlank(semanticTitle)) {
+            return semanticTitle;
+        }
+        String pluginName = resolveReadableTitle(plugin == null ? null : plugin.getName());
+        if (StringUtils.isNotBlank(pluginName)) {
+            return pluginName;
+        }
+        return DEFAULT_CHART_ZH_NAME;
+    }
+
+    private String resolveSemanticChartTitle(SemanticParseInfo parseInfo, QueryResult queryResult,
+            Map<String, Object> formData) {
+        Map<String, String> displayNameMap = buildDisplayNameMap(parseInfo, queryResult);
+        String metricTitle = joinTitleLabels(resolveMetricTitleLabels(formData, displayNameMap));
+        if (StringUtils.isNotBlank(metricTitle)) {
+            return metricTitle;
+        }
+        String dimensionTitle =
+                joinTitleLabels(resolveDimensionTitleLabels(formData, displayNameMap));
+        if (StringUtils.isNotBlank(dimensionTitle)) {
+            return dimensionTitle;
+        }
+        return resolveSemanticChartTitle(parseInfo);
+    }
+
+    private String resolveSemanticChartTitle(SemanticParseInfo parseInfo) {
+        if (parseInfo == null) {
+            return null;
+        }
+        String metricTitle = joinTitleLabels(resolveReadableElementNames(parseInfo.getMetrics()));
+        if (StringUtils.isNotBlank(metricTitle)) {
+            return metricTitle;
+        }
+        String dimensionTitle =
+                joinTitleLabels(resolveReadableElementNames(parseInfo.getDimensions()));
+        if (StringUtils.isNotBlank(dimensionTitle)) {
+            return dimensionTitle;
+        }
+        return resolveReadableTitle(
+                parseInfo.getDateInfo() == null ? null : parseInfo.getDateInfo().getDateField());
+    }
+
+    private List<String> resolveReadableElementNames(Collection<SchemaElement> elements) {
+        if (CollectionUtils.isEmpty(elements)) {
+            return Collections.emptyList();
+        }
+        List<String> readableNames = new ArrayList<>();
+        for (SchemaElement element : elements) {
+            String readable = resolveReadableTitle(resolveReadableElementName(element));
+            if (StringUtils.isNotBlank(readable)) {
+                readableNames.add(readable);
             }
         }
-        return fallback;
+        return readableNames.stream().distinct().collect(Collectors.toList());
+    }
+
+    private List<String> resolveMetricTitleLabels(Map<String, Object> formData,
+            Map<String, String> displayNameMap) {
+        if (formData == null || formData.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<String> labels = new ArrayList<>();
+        appendTitleLabels(labels, formData.get("metric"), displayNameMap);
+        appendTitleLabels(labels, formData.get("metrics"), displayNameMap);
+        appendTitleLabels(labels, formData.get("metrics_b"), displayNameMap);
+        appendTitleLabels(labels, formData.get("secondary_metric"), displayNameMap);
+        appendTitleLabels(labels, formData.get("size"), displayNameMap);
+        return labels.stream().distinct().collect(Collectors.toList());
+    }
+
+    private List<String> resolveDimensionTitleLabels(Map<String, Object> formData,
+            Map<String, String> displayNameMap) {
+        if (formData == null || formData.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<String> labels = new ArrayList<>();
+        appendTitleLabels(labels, formData.get("granularity_sqla"), displayNameMap);
+        appendTitleLabels(labels, formData.get("x_axis"), displayNameMap);
+        appendTitleLabels(labels, formData.get("y_axis"), displayNameMap);
+        appendTitleLabels(labels, formData.get("x"), displayNameMap);
+        appendTitleLabels(labels, formData.get("y"), displayNameMap);
+        appendTitleLabels(labels, formData.get("column"), displayNameMap);
+        appendTitleLabels(labels, formData.get("all_columns_x"), displayNameMap);
+        appendTitleLabels(labels, formData.get("all_columns_y"), displayNameMap);
+        appendTitleLabels(labels, formData.get("groupby"), displayNameMap);
+        appendTitleLabels(labels, formData.get("groupbyRows"), displayNameMap);
+        appendTitleLabels(labels, formData.get("groupbyColumns"), displayNameMap);
+        appendTitleLabels(labels, formData.get("columns"), displayNameMap);
+        appendTitleLabels(labels, formData.get("entity"), displayNameMap);
+        appendTitleLabels(labels, formData.get("source"), displayNameMap);
+        appendTitleLabels(labels, formData.get("target"), displayNameMap);
+        return labels.stream().distinct().collect(Collectors.toList());
+    }
+
+    private void appendTitleLabels(List<String> labels, Object rawValue,
+            Map<String, String> displayNameMap) {
+        if (labels == null || rawValue == null) {
+            return;
+        }
+        if (rawValue instanceof List) {
+            for (Object item : (List<?>) rawValue) {
+                appendTitleLabels(labels, item, displayNameMap);
+            }
+            return;
+        }
+        if (rawValue instanceof Map) {
+            appendMetricLabels(labels, rawValue, displayNameMap);
+            return;
+        }
+        if (!(rawValue instanceof String)) {
+            return;
+        }
+        String readable =
+                resolveReadableTitle(resolveAxisDisplayName((String) rawValue, displayNameMap));
+        if (StringUtils.isNotBlank(readable)) {
+            labels.add(readable);
+        }
+    }
+
+    private String joinTitleLabels(List<String> labels) {
+        if (CollectionUtils.isEmpty(labels)) {
+            return null;
+        }
+        return labels.stream().map(this::resolveReadableTitle).filter(StringUtils::isNotBlank)
+                .distinct().collect(Collectors.joining(" / "));
+    }
+
+    private String normalizeGeneratedChartTitle(String value) {
+        String normalized = sanitizeChartName(value);
+        if (StringUtils.isBlank(normalized)) {
+            return null;
+        }
+        String stripped = normalized.replaceAll("_(\\d+)(?:_\\d+)?$", "").trim();
+        return StringUtils.defaultIfBlank(stripped, normalized);
     }
 
     private List<String> buildDashboardTags(ExecuteContext executeContext) {
@@ -856,9 +1006,9 @@ public class SupersetChartProcessor implements ExecuteResultProcessor {
     }
 
     private List<SupersetChartBuildRequest> buildChartRequests(
-            List<SupersetVizTypeSelector.VizTypeItem> candidates, String chartName,
-            SupersetPluginConfig config, ExecuteContext executeContext, QueryResult queryResult,
-            SupersetDatasetInfo datasetInfo) {
+            List<SupersetVizTypeSelector.VizTypeItem> candidates, SupersetPluginConfig config,
+            ExecuteContext executeContext, QueryResult queryResult, SupersetDatasetInfo datasetInfo,
+            ChatPlugin plugin) {
         List<SupersetChartBuildRequest> requests = new ArrayList<>();
         List<SupersetVizTypeSelector.VizTypeItem> prioritized =
                 prioritizeChartCandidates(candidates);
@@ -870,13 +1020,15 @@ public class SupersetChartProcessor implements ExecuteResultProcessor {
             String vizType = candidate.getVizType();
             String readableVizName =
                     resolveReadableVizName(vizType, candidate.getLlmName(), candidate.getName());
-            String candidateChartName =
-                    buildCandidateChartName(chartName, vizType, i, readableVizName);
             try {
                 Map<String, Object> formData = buildFormData(config, executeContext.getParseInfo(),
                         queryResult, datasetInfo, vizType, executeContext.getAgent(),
                         executeContext.getRequest() == null ? null
                                 : executeContext.getRequest().getQueryText());
+                String titleHint =
+                        resolvePreferredChartTitle(executeContext, queryResult, formData, plugin);
+                String candidateChartName = buildCandidateChartName(
+                        buildChartName(titleHint, executeContext), vizType, i, readableVizName);
                 log.debug(
                         "superset chart formData prepared, vizType={}, keys={}, size={}, datasetColumns={}, datasetMetrics={}, parseMetrics={}, parseDimensions={}",
                         vizType, formData.keySet(), formData.size(),
@@ -893,6 +1045,7 @@ public class SupersetChartProcessor implements ExecuteResultProcessor {
                 SupersetChartBuildRequest request = new SupersetChartBuildRequest();
                 request.setVizType(vizType);
                 request.setVizName(readableVizName);
+                request.setTitleHint(titleHint);
                 request.setChartName(candidateChartName);
                 request.setDashboardHeight(resolveDashboardHeight(config, vizType));
                 request.setFormData(formData);
@@ -1022,7 +1175,7 @@ public class SupersetChartProcessor implements ExecuteResultProcessor {
                 "supersonic_dashboard");
         String safeDisplay = sanitizeChartName(displayName);
         if (StringUtils.isBlank(safeDisplay)) {
-            return safeBase + " - View " + (index + 1);
+            return safeBase + " - " + DEFAULT_CHART_ZH_NAME + (index + 1);
         }
         return safeBase + " - " + safeDisplay;
     }
@@ -1805,7 +1958,7 @@ public class SupersetChartProcessor implements ExecuteResultProcessor {
     private String resolveXAxisField(Map<String, Object> formData) {
         return firstNonBlankValue(toStringValue(formData.get("granularity_sqla")),
                 toStringValue(formData.get("x_axis")), toStringValue(formData.get("x")),
-                toStringValue(formData.get("all_columns_x")),
+                toStringValue(formData.get("column")), toStringValue(formData.get("all_columns_x")),
                 firstStringInList(formData.get("groupby")),
                 firstStringInList(formData.get("groupbyRows")));
     }
@@ -1817,6 +1970,10 @@ public class SupersetChartProcessor implements ExecuteResultProcessor {
         if (StringUtils.isNotBlank(explicitAxisField)) {
             return resolveAxisDisplayName(explicitAxisField, displayNameMap);
         }
+        List<String> metricLabels = resolveMetricLabels(formData, displayNameMap);
+        if (!metricLabels.isEmpty()) {
+            return String.join(" / ", metricLabels);
+        }
         if (parseInfo != null && !CollectionUtils.isEmpty(parseInfo.getMetrics())) {
             List<String> labels = parseInfo.getMetrics().stream()
                     .map(this::resolveReadableElementName).filter(StringUtils::isNotBlank)
@@ -1825,12 +1982,7 @@ public class SupersetChartProcessor implements ExecuteResultProcessor {
                 return String.join(" / ", labels);
             }
         }
-        List<String> metricLabels = new ArrayList<>();
-        appendMetricLabels(metricLabels, formData.get("metric"), displayNameMap);
-        appendMetricLabels(metricLabels, formData.get("metrics"), displayNameMap);
-        appendMetricLabels(metricLabels, formData.get("metrics_b"), displayNameMap);
-        return metricLabels.stream().filter(StringUtils::isNotBlank).distinct()
-                .collect(Collectors.joining(" / "));
+        return null;
     }
 
     private void appendMetricLabels(List<String> labels, Object metricValue,
@@ -1868,6 +2020,21 @@ public class SupersetChartProcessor implements ExecuteResultProcessor {
                 labels.add(label);
             }
         }
+    }
+
+    private List<String> resolveMetricLabels(Map<String, Object> formData,
+            Map<String, String> displayNameMap) {
+        if (formData == null || formData.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<String> metricLabels = new ArrayList<>();
+        appendMetricLabels(metricLabels, formData.get("metric"), displayNameMap);
+        appendMetricLabels(metricLabels, formData.get("metrics"), displayNameMap);
+        appendMetricLabels(metricLabels, formData.get("metrics_b"), displayNameMap);
+        appendMetricLabels(metricLabels, formData.get("secondary_metric"), displayNameMap);
+        appendMetricLabels(metricLabels, formData.get("size"), displayNameMap);
+        return metricLabels.stream().filter(StringUtils::isNotBlank).distinct()
+                .collect(Collectors.toList());
     }
 
     private String resolveAxisDisplayName(String field, Map<String, String> displayNameMap) {
@@ -1943,8 +2110,24 @@ public class SupersetChartProcessor implements ExecuteResultProcessor {
                 || StringUtils.isBlank(readableName)) {
             return;
         }
-        displayNameMap.putIfAbsent(normalizeName(rawName), readableName.trim());
-        displayNameMap.putIfAbsent(normalizeRelaxedName(rawName), readableName.trim());
+        String normalizedReadableName = readableName.trim();
+        registerPreferredDisplayName(displayNameMap, normalizeName(rawName),
+                normalizedReadableName);
+        registerPreferredDisplayName(displayNameMap, normalizeRelaxedName(rawName),
+                normalizedReadableName);
+    }
+
+    private void registerPreferredDisplayName(Map<String, String> displayNameMap, String key,
+            String readableName) {
+        if (displayNameMap == null || StringUtils.isBlank(key)
+                || StringUtils.isBlank(readableName)) {
+            return;
+        }
+        String existing = displayNameMap.get(key);
+        if (StringUtils.isBlank(existing)
+                || (!containsChineseText(existing) && containsChineseText(readableName))) {
+            displayNameMap.put(key, readableName);
+        }
     }
 
     private String resolveReadableElementName(SchemaElement element) {
@@ -1976,8 +2159,7 @@ public class SupersetChartProcessor implements ExecuteResultProcessor {
         if (context.dateInfo != null) {
             return true;
         }
-        return !CollectionUtils.isEmpty(context.dimensions)
-                && context.dimensions.contains(context.timeColumn);
+        return false;
     }
 
     private List<SupersetDatasetColumn> resolveQueryColumns(QueryResult queryResult) {

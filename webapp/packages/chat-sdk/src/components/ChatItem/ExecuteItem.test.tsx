@@ -16,7 +16,7 @@ jest.mock('react-syntax-highlighter/dist/esm/styles/prism', () => ({
 
 const buildSupersetData = (fallback = false): MsgDataType =>
   ({
-    queryMode: 'SUPERSET',
+    queryMode: 'METRIC_GROUPBY',
     queryColumns: [],
     queryResults: [],
     response: {
@@ -34,13 +34,13 @@ const buildSupersetData = (fallback = false): MsgDataType =>
   }) as MsgDataType;
 
 describe('ExecuteItem', () => {
-  it('renders Superset chart when queryMode is SUPERSET', () => {
+  it('renders Superset chart when response identifies a Superset payload', () => {
     const data = buildSupersetData(false);
     const { getByTitle } = render(
       <ExecuteItem
         queryId={1}
         question="test"
-        queryMode="SUPERSET"
+        queryMode="METRIC_GROUPBY"
         executeLoading={false}
         chartIndex={0}
         data={data}
@@ -56,7 +56,7 @@ describe('ExecuteItem', () => {
       <ExecuteItem
         queryId={1}
         question="test"
-        queryMode="SUPERSET"
+        queryMode="METRIC_GROUPBY"
         executeLoading={false}
         chartIndex={0}
         data={data}
