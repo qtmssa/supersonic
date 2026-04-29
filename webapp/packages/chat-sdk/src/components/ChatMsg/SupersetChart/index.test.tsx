@@ -1,5 +1,17 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import SupersetChart from './index';
+import { ChartItemContext } from '../../ChatItem';
+
+jest.mock('../../ChatItem', () => {
+  const React = require('react');
+  return {
+    ChartItemContext: React.createContext({
+      register: jest.fn(),
+      call: jest.fn(),
+      reportMessageWidth: jest.fn(),
+    }),
+  };
+});
 
 jest.mock('@superset-ui/embedded-sdk', () => ({
   embedDashboard: jest.fn(),
@@ -161,6 +173,49 @@ describe('SupersetChart', () => {
     expect(screen.queryByText('Line Chart')).toBeNull();
     expect(screen.getByRole('button', { name: '折线图' })).toBeTruthy();
     expect(screen.getByText('推送到看板')).toBeTruthy();
+  });
+
+  test('reports the widest candidate width to parent message container', async () => {
+    const { embedDashboard } = require('@superset-ui/embedded-sdk');
+    embedDashboard.mockClear();
+    const reportMessageWidth = jest.fn();
+    const data = buildData({
+      webPage: { url: '', params: [] },
+      pluginId: 1,
+      embeddedId: 'embed-line',
+      supersetDomain: 'https://superset.example.com',
+      vizTypeCandidates: [
+        {
+          vizType: 'table',
+          vizName: 'Table',
+          embeddedId: 'embed-table',
+          supersetDomain: 'https://superset.example.com',
+          chartId: 11,
+        },
+        {
+          vizType: 'echarts_timeseries_line',
+          vizName: 'Line Chart',
+          embeddedId: 'embed-line',
+          supersetDomain: 'https://superset.example.com',
+          chartId: 22,
+        },
+      ],
+    });
+
+    render(
+      <ChartItemContext.Provider
+        value={{ register: jest.fn(), call: jest.fn(), reportMessageWidth }}
+      >
+        <SupersetChart id={1} data={data} widthScopeKey="result:superset-1" />
+      </ChartItemContext.Provider>
+    );
+
+    await waitFor(() => {
+      expect(reportMessageWidth).toHaveBeenCalledWith({
+        scopeKey: 'result:superset-1',
+        preferredWidth: 860,
+      });
+    });
   });
 
   test('prefers final dashboard embed when candidates only describe child charts', async () => {

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Input, Modal, message } from 'antd';
 import { embedDashboard } from '@superset-ui/embedded-sdk';
 import type { EmbeddedDashboard, ThemeMode } from '@superset-ui/embedded-sdk';
@@ -15,11 +15,14 @@ import {
   fetchSupersetManualDashboards,
   pushSupersetChartToDashboard,
 } from '../../../service';
+import { ChartItemContext } from '../../ChatItem';
+import { resolveSupersetMessageWidth } from '../../ChatItem/messageWidth';
 
 type Props = {
   id: string | number;
   data: MsgDataType;
   triggerResize?: boolean;
+  widthScopeKey?: string;
 };
 
 type SupersetChartView = SupersetVizTypeCandidate & {
@@ -350,7 +353,8 @@ function resolveHostThemeMode(): ThemeMode {
   return DEFAULT_THEME_MODE;
 }
 
-const SupersetChart: React.FC<Props> = ({ id, data, triggerResize }) => {
+const SupersetChart: React.FC<Props> = ({ id, data, triggerResize, widthScopeKey }) => {
+  const { reportMessageWidth } = useContext(ChartItemContext);
   const [height, setHeight] = useState(DEFAULT_HEIGHT);
   const [backgroundColor, setBackgroundColor] = useState<string>();
   const [activeViewKey, setActiveViewKey] = useState('');
@@ -466,6 +470,21 @@ const SupersetChart: React.FC<Props> = ({ id, data, triggerResize }) => {
     response?.vizType,
     interactiveViewCandidates,
   ]);
+
+  useEffect(() => {
+    if (!widthScopeKey) {
+      return;
+    }
+    reportMessageWidth({
+      scopeKey: widthScopeKey,
+      preferredWidth: resolveSupersetMessageWidth(
+        viewCandidates.map(candidate => ({
+          key: candidate.key,
+          vizType: candidate.vizType,
+        }))
+      ),
+    });
+  }, [reportMessageWidth, viewCandidates, widthScopeKey]);
 
   const defaultViewKey = useMemo(() => {
     const matched = viewCandidates.find(candidate => candidate.vizType === response?.vizType);

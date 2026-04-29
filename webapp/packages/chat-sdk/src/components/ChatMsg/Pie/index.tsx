@@ -1,9 +1,9 @@
 import { PREFIX_CLS } from '../../../common/constants';
 import { MsgDataType } from '../../../common/type';
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 import NoPermissionChart from '../NoPermissionChart';
 import { ColumnType } from '../../../common/type';
-import { Spin, Select } from 'antd';
+import { Select } from 'antd';
 import PieChart from './PieChart';
 import Bar from '../Bar';
 

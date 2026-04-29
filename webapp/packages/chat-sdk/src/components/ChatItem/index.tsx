@@ -9,7 +9,7 @@ import {
   RangeValue,
   SimilarQuestionType,
 } from '../../common/type';
-import { createContext, useEffect, useRef, useState } from 'react';
+import { createContext, useCallback, useEffect, useRef, useState } from 'react';
 import {
   chatExecute,
   chatParse,
@@ -33,6 +33,13 @@ import { AgentType } from '../../Chat/type';
 import dayjs, { Dayjs } from 'dayjs';
 import { exportCsvFile } from '../../utils/utils';
 import { useMethodRegister } from '../../hooks';
+import {
+  clampMessageBubbleWidth,
+  mergeMessageWidthReport,
+  MessageWidthReport,
+  resolveMessageWidthHostElement,
+  resolveMessageWidthLimit,
+} from './messageWidth';
 
 type Props = {
   msg: string;
@@ -62,6 +69,7 @@ type Props = {
 export const ChartItemContext = createContext({
   register: (...args: any[]) => {},
   call: (...args: any[]) => {},
+  reportMessageWidth: (_report?: MessageWidthReport) => {},
 });
 
 const ChatItem: React.FC<Props> = ({
@@ -88,6 +96,7 @@ const ChatItem: React.FC<Props> = ({
   onUpdateMessageScroll,
   onSendMsg,
 }) => {
+  const chatItemRef = useRef<HTMLDivElement>(null);
   const [parseLoading, setParseLoading] = useState(false);
   const [parseTimeCost, setParseTimeCost] = useState<ParseTimeCostType>();
   const [parseInfo, setParseInfo] = useState<ChatContextType>();
@@ -109,6 +118,8 @@ const ChatItem: React.FC<Props> = ({
     {}
   );
   const [isParserError, setIsParseError] = useState<boolean>(false);
+  const [messageWidthReport, setMessageWidthReport] = useState<MessageWidthReport>();
+  const [messageWidthLimit, setMessageWidthLimit] = useState<number>();
   const resetState = () => {
     setParseLoading(false);
     setParseTimeCost(undefined);
@@ -126,9 +137,24 @@ const ChatItem: React.FC<Props> = ({
     setEntityInfo({} as EntityInfoType);
     setDataCache({});
     setIsParseError(false);
+    setMessageWidthReport(undefined);
   };
 
   const prefixCls = `${PREFIX_CLS}-item`;
+
+  const syncMessageWidthLimit = useCallback(() => {
+    const widthHost =
+      resolveMessageWidthHostElement(chatItemRef.current) || chatItemRef.current;
+    const containerWidth =
+      widthHost?.getBoundingClientRect().width ||
+      (typeof window !== 'undefined' ? window.innerWidth : 0);
+    const nextWidthLimit = resolveMessageWidthLimit(containerWidth, 0);
+    setMessageWidthLimit(current => (current === nextWidthLimit ? current : nextWidthLimit));
+  }, []);
+
+  const reportMessageWidth = useCallback((report?: MessageWidthReport) => {
+    setMessageWidthReport(current => mergeMessageWidthReport(current, report));
+  }, []);
 
   const updateData = (res: Result<MsgDataType>) => {
     let tip: string = '';
@@ -195,7 +221,7 @@ const ChatItem: React.FC<Props> = ({
         isRefresh
       );
       const queryId = parseInfoValue.queryId; // 伪流式 大模型输出
-      if (queryId != undefined && res.data.queryState != 'INVALID') {
+      if (queryId !== undefined && res.data.queryState !== 'INVALID') {
         const getSummary = async (data: any, queryId: number) => {
           const res2: any = await getExecuteSummary(queryId);
           if (res2.data.queryMode == null) {
@@ -314,6 +340,28 @@ const ChatItem: React.FC<Props> = ({
     }
     initChatItem(msg, msgData);
   }, [msg, msgData]);
+
+  useEffect(() => {
+    syncMessageWidthLimit();
+    if (typeof ResizeObserver === 'undefined' || !chatItemRef.current) {
+      return;
+    }
+    const widthHost =
+      resolveMessageWidthHostElement(chatItemRef.current) || chatItemRef.current;
+    const observer = new ResizeObserver(() => {
+      syncMessageWidthLimit();
+    });
+    observer.observe(widthHost);
+    return () => {
+      observer.disconnect();
+    };
+  }, [syncMessageWidthLimit]);
+
+  useEffect(() => {
+    if (triggerResize) {
+      syncMessageWidthLimit();
+    }
+  }, [syncMessageWidthLimit, triggerResize]);
 
   const onSwitchEntity = async (entityId: string) => {
     setEntitySwitchLoading(true);
@@ -477,6 +525,17 @@ const ChatItem: React.FC<Props> = ({
   const contentClass = classNames(`${prefixCls}-content`, {
     [`${prefixCls}-content-mobile`]: isMobile,
   });
+  const resolvedMessageWidth = clampMessageBubbleWidth(
+    messageWidthReport?.preferredWidth,
+    messageWidthLimit
+  );
+  const contentStyle =
+    resolvedMessageWidth || messageWidthLimit
+      ? {
+          ...(resolvedMessageWidth ? { width: resolvedMessageWidth } : {}),
+          ...(messageWidthLimit ? { maxWidth: messageWidthLimit } : {}),
+        }
+      : undefined;
 
   const { llmReq, llmResp } = parseInfo?.properties?.CONTEXT || {};
 
@@ -485,16 +544,20 @@ const ChatItem: React.FC<Props> = ({
   let actualQueryText=parseInfo?.properties?.CONTEXT?.queryText //  2025-05-27 增加判空，防止出现上下文没有 queryText 的情况
   actualQueryText=actualQueryText==null?msg:actualQueryText
   return (
-    <ChartItemContext.Provider value={{ register, call }}>
-      <div className={prefixCls}>
+    <ChartItemContext.Provider value={{ register, call, reportMessageWidth }}>
+      <div className={prefixCls} ref={chatItemRef}>
         {!isMobile && <IconFont type="icon-zhinengsuanfa" className={`${prefixCls}-avatar`} />}
-        <div className={isMobile ? `${prefixCls}-mobile-msg-card` : ''}>
+        <div
+          className={classNames(`${prefixCls}-message-card`, {
+            [`${prefixCls}-mobile-msg-card`]: isMobile,
+          })}
+        >
           <div className={`${prefixCls}-time`}>
             {parseTimeCost?.parseStartTime
               ? dayjs(parseTimeCost.parseStartTime).format('M月D日 HH:mm')
               : ''}
           </div>
-          <div className={contentClass}>
+          <div className={contentClass} data-testid="chat-item-content" style={contentStyle}>
             <>
               {currentAgent?.enableFeedback === 1 && !questionId && showExpandParseTip && (
                 <div style={{ marginBottom: 10 }}>

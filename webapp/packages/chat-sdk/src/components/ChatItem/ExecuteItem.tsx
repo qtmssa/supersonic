@@ -1,4 +1,4 @@
-import { Space, Spin, Switch, Tooltip, message } from 'antd';
+import { Space, Spin, Switch } from 'antd';
 import { CheckCircleFilled, InfoCircleOutlined } from '@ant-design/icons';
 import { PREFIX_CLS, MsgContentTypeEnum } from '../../common/constants';
 import { MsgDataType } from '../../common/type';
@@ -8,9 +8,11 @@ import WebPage from '../ChatMsg/WebPage';
 import Loading from './Loading';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { solarizedlight } from 'react-syntax-highlighter/dist/esm/styles/prism';
-import React, { ReactNode, useState } from 'react';
+import React, { ReactNode, useContext, useEffect, useMemo, useState } from 'react';
 import { SupersetChartResponseType } from '../../common/type';
 import MarkDown from '../ChatMsg/MarkDown';
+import { ChartItemContext } from '.';
+import { resolveMessageWidthScopeKey } from './messageWidth';
 
 type Props = {
   queryId?: number;
@@ -25,6 +27,7 @@ type Props = {
   renderCustomExecuteNode?: boolean;
   data?: MsgDataType;
   triggerResize?: boolean;
+  widthScopeKey?: string;
   isDeveloper?: boolean;
   isSimpleMode?: boolean;
 };
@@ -42,10 +45,12 @@ const ExecuteItem: React.FC<Props> = ({
   renderCustomExecuteNode,
   data,
   triggerResize,
+  widthScopeKey,
   isDeveloper,
   isSimpleMode,
 }) => {
   const prefixCls = `${PREFIX_CLS}-item`;
+  const { reportMessageWidth } = useContext(ChartItemContext);
   const [showMsgContentTable, setShowMsgContentTable] = useState<boolean>(false);
   const [msgContentType, setMsgContentType] = useState<MsgContentTypeEnum>();
   const [showErrMsg, setShowErrMsg] = useState<boolean>(false);
@@ -60,6 +65,48 @@ const ExecuteItem: React.FC<Props> = ({
     data?.queryMode === 'SUPERSET' &&
     supersetResponse &&
     !supersetResponse.fallback;
+  const resolvedWidthScopeKey = useMemo(() => {
+    if (widthScopeKey) {
+      return widthScopeKey;
+    }
+
+    const queryColumns = data?.queryColumns || [];
+    const metricFieldsLength =
+      queryColumns?.filter(column => column.showType === 'NUMBER').length || 0;
+    const responseSignature = supersetResponse
+      ? [
+          supersetResponse.embeddedId || '',
+          supersetResponse.vizType || '',
+          ...(Array.isArray(supersetResponse.vizTypeCandidates)
+            ? supersetResponse.vizTypeCandidates.map(candidate => {
+                return [
+                  candidate?.embeddedId || '',
+                  candidate?.supersetDomain || '',
+                  candidate?.vizType || '',
+                ].join(':');
+              })
+            : []),
+        ].join('|')
+      : '';
+
+    return resolveMessageWidthScopeKey({
+      queryId: queryId ?? data?.queryId ?? data?.id,
+      queryMode: data?.queryMode || queryMode,
+      queryColumns,
+      queryResultsLength: data?.queryResults?.length,
+      metricFieldsLength,
+      textResult: data?.textResult,
+      textSummary: data?.textSummary,
+      responseSignature,
+    });
+  }, [data, queryId, queryMode, supersetResponse, widthScopeKey]);
+
+  useEffect(() => {
+    if (!data) {
+      return;
+    }
+    reportMessageWidth({ scopeKey: resolvedWidthScopeKey });
+  }, [data, reportMessageWidth, resolvedWidthScopeKey]);
 
   const getNodeTip = (title: ReactNode, tip?: string | ReactNode) => {
     return (
@@ -80,10 +127,6 @@ const ExecuteItem: React.FC<Props> = ({
     return getNodeTip(`${titlePrefix}查询中`);
   }
 
-  const handleCopy = (_: string, result: any) => {
-    result ? message.success('复制SQL成功', 1) : message.error('复制SQL失败', 1);
-  };
-
   if (executeTip) {
     return getNodeTip(
       <>
@@ -91,13 +134,15 @@ const ExecuteItem: React.FC<Props> = ({
         {executeErrorMsg && (
           <Space>
             <InfoCircleOutlined style={{ marginLeft: 5, color: 'red' }} />
-            <a
+            <button
+              type="button"
+              style={{ border: 0, padding: 0, background: 'transparent', cursor: 'pointer' }}
               onClick={() => {
                 setShowErrMsg(!showErrMsg);
               }}
             >
               {!showErrMsg ? '查看' : '收起'}
-            </a>
+            </button>
           </Space>
         )}
         {!!data?.queryTimeCost && isDeveloper && (
@@ -181,6 +226,7 @@ const ExecuteItem: React.FC<Props> = ({
               id={queryId ?? data?.queryId ?? data?.id ?? ''}
               data={data}
               triggerResize={triggerResize}
+              widthScopeKey={resolvedWidthScopeKey}
             />
           ) : data?.queryMode === 'WEB_PAGE' ? (
             <WebPage id={queryId!} data={data} />
@@ -193,6 +239,7 @@ const ExecuteItem: React.FC<Props> = ({
               data={data}
               chartIndex={chartIndex}
               triggerResize={triggerResize}
+              widthScopeKey={resolvedWidthScopeKey}
               onMsgContentTypeChange={setMsgContentType}
             />
           )}

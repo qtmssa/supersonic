@@ -4,7 +4,7 @@ import MetricTrend from './MetricTrend';
 import MarkDown from './MarkDown';
 import Table from './Table';
 import { ColumnType, DrillDownDimensionType, FieldType, MsgDataType } from '../../common/type';
-import { useEffect, useState } from 'react';
+import { useContext, useEffect, useState } from 'react';
 import { queryData } from '../../service';
 import classNames from 'classnames';
 import { PREFIX_CLS, MsgContentTypeEnum } from '../../common/constants';
@@ -13,6 +13,8 @@ import DrillDownDimensions from '../DrillDownDimensions';
 import MetricOptions from '../MetricOptions';
 import { isMobile } from '../../utils/utils';
 import Pie from './Pie';
+import { ChartItemContext } from '../ChatItem';
+import { resolveChartMessageWidthReport } from '../ChatItem/messageWidth';
 
 type Props = {
   queryId?: number;
@@ -20,6 +22,7 @@ type Props = {
   data: MsgDataType;
   chartIndex: number;
   triggerResize?: boolean;
+  widthScopeKey?: string;
   forceShowTable?: boolean;
   isSimpleMode?: boolean;
   onMsgContentTypeChange: (msgContentType: MsgContentTypeEnum) => void;
@@ -31,10 +34,12 @@ const ChatMsg: React.FC<Props> = ({
   data,
   chartIndex,
   triggerResize,
+  widthScopeKey,
   forceShowTable = false,
   isSimpleMode,
   onMsgContentTypeChange,
 }) => {
+  const { reportMessageWidth } = useContext(ChartItemContext);
   const { queryColumns, queryResults, chatContext, queryMode } = data || {};
   const { dimensionFilters, elementMatches } = chatContext || {};
 
@@ -161,38 +166,12 @@ const ChatMsg: React.FC<Props> = ({
     return MsgContentTypeEnum.TABLE;
   };
 
-  const getMsgStyle = (type: MsgContentTypeEnum) => {
-    if (isMobile) {
-      return { maxWidth: 'calc(100vw - 20px)' };
-    }
-    if (!queryResults?.length || !queryColumns.length) {
-      return;
-    }
-    if (type === MsgContentTypeEnum.METRIC_BAR) {
-      return {
-        [queryResults.length > 5 ? 'width' : 'minWidth']: queryResults.length * 150,
-      };
-    }
-    if (type === MsgContentTypeEnum.TABLE) {
-      return {
-        [queryColumns.length > 5 ? 'width' : 'minWidth']: queryColumns.length * 150,
-      };
-    }
-    if (type === MsgContentTypeEnum.METRIC_TREND || type === MsgContentTypeEnum.METRIC_PIE) {
-      return { width: 'calc(100vw - 410px)' };
-    }
-  };
-
   useEffect(() => {
     const type = getMsgContentType();
     if (type) {
       onMsgContentTypeChange?.(type);
     }
   }, [data, columns, isSimpleMode]);
-
-  if (!queryColumns || !queryResults || !columns) {
-    return null;
-  }
 
   const getMsgContent = () => {
     const contentType = getMsgContentType();
@@ -351,12 +330,6 @@ const ChatMsg: React.FC<Props> = ({
     });
   };
 
-  const chartMsgClass = classNames({
-    [prefixCls]: ![MsgContentTypeEnum.TABLE, MsgContentTypeEnum.MARKDOWN].includes(
-      getMsgContentType() as MsgContentTypeEnum
-    ),
-  });
-
   const entityId = dimensionFilters?.length > 0 ? dimensionFilters[0].value : undefined;
   const entityName = elementMatches?.find((item: any) => item.element?.type === 'ID')?.element
     ?.name;
@@ -366,9 +339,16 @@ const ChatMsg: React.FC<Props> = ({
     typeof entityId === 'string' &&
     entityName !== undefined;
 
+  const type = getMsgContentType();
+  const chartMsgClass = classNames({
+    [prefixCls]: ![MsgContentTypeEnum.TABLE, MsgContentTypeEnum.MARKDOWN].includes(
+      type as MsgContentTypeEnum
+    ),
+  });
+
   const existDrillDownDimension =
-  (queryMode.includes('METRIC') || queryMode === 'LLM_S2SQL')&&
-    getMsgContentType() !== MsgContentTypeEnum.TEXT &&
+    (queryMode.includes('METRIC') || queryMode === 'LLM_S2SQL') &&
+    type !== MsgContentTypeEnum.TEXT &&
     !isEntityMode;
 
   const recommendMetrics = chatContext?.metrics?.filter(metric =>
@@ -380,11 +360,33 @@ const ChatMsg: React.FC<Props> = ({
     recommendMetrics?.length > 0 &&
     queryColumns?.filter(column => column.showType === 'NUMBER').length === 1;
 
-  const type = getMsgContentType();
-  const style = type ? getMsgStyle(type) : undefined;
+  const widthReport = widthScopeKey
+    ? resolveChartMessageWidthReport({
+        scopeKey: widthScopeKey,
+        type,
+        queryColumnsLength: queryColumns?.length,
+        queryResultsLength: dataSource?.length,
+        metricFieldsLength: metricFields.length,
+        includeBar:
+          type === MsgContentTypeEnum.METRIC_PIE || type === MsgContentTypeEnum.METRIC_TREND,
+        includeTable: [
+          MsgContentTypeEnum.METRIC_BAR,
+          MsgContentTypeEnum.METRIC_PIE,
+          MsgContentTypeEnum.METRIC_TREND,
+        ].includes(type as MsgContentTypeEnum),
+      })
+    : undefined;
+
+  useEffect(() => {
+    reportMessageWidth(widthReport);
+  }, [reportMessageWidth, widthReport]);
+
+  if (!queryColumns || !queryResults || !columns) {
+    return null;
+  }
 
   return (
-    <div className={chartMsgClass} style={style}>
+    <div className={chartMsgClass}>
       {dataSource?.length === 0 ? (
         <div>暂无数据</div>
       ) : (
@@ -393,7 +395,7 @@ const ChatMsg: React.FC<Props> = ({
           {(isMultipleMetric || existDrillDownDimension) && !isSimpleMode && (
             <div
               className={`${prefixCls}-bottom-tools ${
-                getMsgContentType() === MsgContentTypeEnum.METRIC_CARD
+                type === MsgContentTypeEnum.METRIC_CARD
                   ? `${prefixCls}-metric-card-tools`
                   : ''
               } ${isMobile ? 'mobile' : ''}`}
