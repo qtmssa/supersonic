@@ -195,6 +195,7 @@ export type MsgDataType = {
   parseInfos?: ChatContextType[];
   queryTimeCost?: number;
   similarQueries: SimilarQuestionType[];
+  similarQueriesSource?: SimilarQueriesSourceType;
   recommendedDimensions: DrillDownDimensionType[];
   textResult: string;
   errorMsg: string;
@@ -308,6 +309,8 @@ export type SimilarQuestionType = {
   parseId: number;
   queryText: string;
 };
+
+export type SimilarQueriesSourceType = 'bootstrap' | 'authoritative';
 
 export type ParseTimeCostType = {
   parseStartTime: number;

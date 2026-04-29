@@ -115,6 +115,9 @@ public class ChatQueryRepositoryImpl implements ChatQueryRepository {
         BeanUtils.copyProperties(chatQueryDO, queryResp);
         QueryResult queryResult =
                 JsonUtil.toObject(chatQueryDO.getQueryResult(), QueryResult.class);
+        List<SimilarQueryRecallResp> authoritativeSimilarQueries =
+                JSONObject.parseArray(chatQueryDO.getSimilarQueries(),
+                        SimilarQueryRecallResp.class);
         if (queryResult != null) {
             queryResult.setQueryId(chatQueryDO.getQuestionId());
             // fix bugs, compatible with bugs caused by history field changes
@@ -131,10 +134,15 @@ public class ChatQueryRepositoryImpl implements ChatQueryRepository {
                 }).collect(Collectors.toList());
                 queryResult.setQueryColumns(queryColumns);
             }
+            if (CollectionUtils.isEmpty(authoritativeSimilarQueries)) {
+                authoritativeSimilarQueries = queryResult.getSimilarQueries();
+            }
+            queryResult.setSimilarQueries(CollectionUtils.isEmpty(authoritativeSimilarQueries)
+                    ? new ArrayList<>() : authoritativeSimilarQueries);
             queryResp.setQueryResult(queryResult);
         }
-        queryResp.setSimilarQueries(JSONObject.parseArray(chatQueryDO.getSimilarQueries(),
-                SimilarQueryRecallResp.class));
+        queryResp.setSimilarQueries(CollectionUtils.isEmpty(authoritativeSimilarQueries)
+                ? new ArrayList<>() : authoritativeSimilarQueries);
         queryResp.setParseTimeCost(
                 JsonUtil.toObject(chatQueryDO.getParseTimeCost(), ParseTimeCostResp.class));
         return queryResp;

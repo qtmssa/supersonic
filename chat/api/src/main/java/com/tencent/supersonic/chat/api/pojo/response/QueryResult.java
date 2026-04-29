@@ -25,6 +25,7 @@ public class QueryResult {
     private String textResult;
     private String textSummary;
     private Long queryTimeCost;
+    private List<SimilarQueryRecallResp> similarQueries;
     private List<SchemaElement> recommendedDimensions;
     private AggregateInfo aggregateInfo;
     private String errorMsg;

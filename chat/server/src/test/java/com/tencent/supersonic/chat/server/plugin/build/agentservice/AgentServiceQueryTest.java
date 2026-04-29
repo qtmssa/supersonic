@@ -22,6 +22,11 @@ public class AgentServiceQueryTest {
         }
 
         @Override
+        protected String resolveConversationId(Long chatId, Long agentId) {
+            return "12";
+        }
+
+        @Override
         protected Object callAgentService(String url, Map<String, Object> payload) {
             Assertions.assertEquals("http://example.com", url);
             Assertions.assertEquals("agent-1", payload.get("agent_id"));

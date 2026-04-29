@@ -18,9 +18,10 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
-class SimilarQueryGenerator {
+public class SimilarQueryGenerator {
 
     private static final int MAX_SUGGESTION_SIZE = 5;
+    private static final int MIN_DIVERSE_SUGGESTION_COUNT = 3;
 
     private static final Pattern CHINESE_DIMENSION_PATTERN =
             Pattern.compile("按([\\p{IsHan}A-Za-z0-9_]{1,12}?)(?:看|维度|统计|分析|分布|排名|趋势|变化|对比|汇总)");
@@ -28,6 +29,9 @@ class SimilarQueryGenerator {
     private static final Pattern ENGLISH_DIMENSION_PATTERN = Pattern.compile(
             "\\bby\\s+([a-zA-Z][a-zA-Z\\s]{0,20}?)(?=\\?|$|,|\\.|\\s+(?:for|with|and)\\b)",
             Pattern.CASE_INSENSITIVE);
+
+    private static final Pattern CHINESE_BREAKDOWN_PREFIX_PATTERN = Pattern.compile(
+            "^按([\\p{IsHan}A-Za-z0-9_]{1,12}?)(?:看|维度|统计|分析|分布|排名|趋势|变化|对比|汇总)?[，,\\s]*(.+)$");
 
     private static final Pattern CJK_PATTERN = Pattern.compile("[\\p{IsHan}]");
 
@@ -43,10 +47,8 @@ class SimilarQueryGenerator {
         addRecallCandidates(candidates, currentQuery, recalledExemplars, profile);
         addGeneratedCandidates(candidates, currentQuery, profile);
 
-        return candidates.values().stream()
-                .sorted(Comparator.comparingInt(Candidate::getScore).reversed()
-                        .thenComparing(Candidate::getText))
-                .limit(finalLimit).map(candidate -> SimilarQueryRecallResp.builder()
+        return rankCandidates(currentQuery, candidates.values(), finalLimit).stream()
+                .map(candidate -> SimilarQueryRecallResp.builder()
                         .queryText(candidate.getText()).build())
                 .collect(Collectors.toList());
     }
@@ -58,9 +60,12 @@ class SimilarQueryGenerator {
         }
         recalledExemplars.stream().filter(Objects::nonNull)
                 .sorted(Comparator.comparingDouble(Text2SQLExemplar::getSimilarity).reversed())
-                .forEach(exemplar -> addCandidate(candidates, currentQuery, exemplar.getQuestion(),
-                        1000 + (int) Math.round(exemplar.getSimilarity() * 100)
-                                + profile.getBonus(classify(exemplar.getQuestion()))));
+                .forEach(exemplar -> {
+                    Category category = classify(exemplar.getQuestion());
+                    addCandidate(candidates, currentQuery, exemplar.getQuestion(), category,
+                            1000 + (int) Math.round(exemplar.getSimilarity() * 100)
+                                    + profile.getBonus(category));
+                });
     }
 
     private void addGeneratedCandidates(Map<String, Candidate> candidates, String currentQuery,
@@ -73,36 +78,109 @@ class SimilarQueryGenerator {
         int dimensionPriority = 940;
         for (String dimension : preferredDimensions) {
             addCandidate(candidates, currentQuery,
-                    buildBreakdownQuestion(cleanedQuery, dimension, chinese),
+                    buildBreakdownQuestion(cleanedQuery, dimension, chinese), Category.BREAKDOWN,
                     dimensionPriority + profile.getBonus(Category.BREAKDOWN));
             dimensionPriority -= 20;
         }
 
+        if (shouldAddOverviewQuestion(currentQuery)) {
+            addCandidate(candidates, currentQuery, buildOverviewQuestion(cleanedQuery, chinese),
+                    Category.OVERVIEW,
+                    920 + profile.getBonus(Category.OVERVIEW));
+        }
         if (preferredDimensions.isEmpty() && classify(currentQuery) != Category.BREAKDOWN) {
             addCandidate(candidates, currentQuery,
-                    buildBreakdownQuestion(cleanedQuery, null, chinese),
+                    buildBreakdownQuestion(cleanedQuery, null, chinese), Category.BREAKDOWN,
                     900 + profile.getBonus(Category.BREAKDOWN));
         }
         if (classify(currentQuery) != Category.DETAIL) {
             addCandidate(candidates, currentQuery, buildDetailQuestion(cleanedQuery, chinese),
+                    Category.DETAIL,
                     880 + profile.getBonus(Category.DETAIL));
         }
         if (classify(currentQuery) != Category.TREND) {
             addCandidate(candidates, currentQuery, buildTrendQuestion(cleanedQuery, chinese),
+                    Category.TREND,
                     860 + profile.getBonus(Category.TREND));
         }
         if (classify(currentQuery) != Category.DRIVER) {
             addCandidate(candidates, currentQuery, buildDriverQuestion(cleanedQuery, chinese),
+                    Category.DRIVER,
                     840 + profile.getBonus(Category.DRIVER));
         }
         if (classify(currentQuery) != Category.RANKING) {
             addCandidate(candidates, currentQuery, buildRankingQuestion(cleanedQuery, chinese),
+                    Category.RANKING,
                     820 + profile.getBonus(Category.RANKING));
         }
     }
 
+    private List<Candidate> rankCandidates(String currentQuery, Collection<Candidate> candidates,
+            int limit) {
+        List<Candidate> sortedCandidates = candidates.stream()
+                .sorted(Comparator.comparingInt(Candidate::getScore).reversed()
+                        .thenComparing(Candidate::getText))
+                .collect(Collectors.toList());
+        List<Candidate> rankedCandidates = new ArrayList<>();
+        List<String> selectedKeys = new ArrayList<>();
+        int diversityTarget = Math.min(limit, MIN_DIVERSE_SUGGESTION_COUNT);
+
+        for (Category category : buildPriorityCategories(currentQuery)) {
+            if (rankedCandidates.size() >= diversityTarget) {
+                break;
+            }
+            Candidate selected = sortedCandidates.stream()
+                    .filter(candidate -> candidate.getCategory() == category)
+                    .filter(candidate -> !selectedKeys.contains(normalize(candidate.getText())))
+                    .findFirst().orElse(null);
+            if (selected != null) {
+                rankedCandidates.add(selected);
+                selectedKeys.add(normalize(selected.getText()));
+            }
+        }
+
+        for (Candidate candidate : sortedCandidates) {
+            if (rankedCandidates.size() >= limit) {
+                break;
+            }
+            String normalizedText = normalize(candidate.getText());
+            if (selectedKeys.contains(normalizedText)) {
+                continue;
+            }
+            rankedCandidates.add(candidate);
+            selectedKeys.add(normalizedText);
+        }
+        return rankedCandidates;
+    }
+
+    private List<Category> buildPriorityCategories(String currentQuery) {
+        Category currentCategory = classify(currentQuery);
+        List<Category> categories = new ArrayList<>();
+        if (shouldAddOverviewQuestion(currentQuery)) {
+            categories.add(Category.OVERVIEW);
+        }
+        if (currentCategory != Category.BREAKDOWN) {
+            categories.add(Category.BREAKDOWN);
+        }
+        if (currentCategory != Category.DETAIL) {
+            categories.add(Category.DETAIL);
+        }
+        if (currentCategory != Category.TREND) {
+            categories.add(Category.TREND);
+        }
+        if (currentCategory != Category.DRIVER) {
+            categories.add(Category.DRIVER);
+        }
+        if (currentCategory != Category.RANKING) {
+            categories.add(Category.RANKING);
+        }
+        categories.add(currentCategory);
+        categories.add(Category.OTHER);
+        return categories.stream().distinct().collect(Collectors.toList());
+    }
+
     private void addCandidate(Map<String, Candidate> candidates, String currentQuery, String text,
-            int score) {
+            Category category, int score) {
         if (StringUtils.isBlank(text)) {
             return;
         }
@@ -111,7 +189,9 @@ class SimilarQueryGenerator {
         if (normalizedText.equals(normalizedCurrentQuery)) {
             return;
         }
-        Candidate candidate = new Candidate(stripTrailingPunctuation(text), score);
+        Candidate candidate =
+                new Candidate(stripTrailingPunctuation(text), category == null ? Category.OTHER
+                        : category, score);
         Candidate existing = candidates.get(normalizedText);
         if (existing == null || existing.getScore() < candidate.getScore()) {
             candidates.put(normalizedText, candidate);
@@ -129,6 +209,14 @@ class SimilarQueryGenerator {
             return String.format("How does %s break down by %s", quote(query, false), dimension);
         }
         return String.format("How does %s break down across key dimensions", quote(query, false));
+    }
+
+    private String buildOverviewQuestion(String query, boolean chinese) {
+        String coreQuery = extractOverviewSubject(query);
+        if (chinese) {
+            return String.format("回到整体看，%s的总体情况怎么样", quote(coreQuery, true));
+        }
+        return String.format("At the overall level, how is %s performing", quote(coreQuery, false));
     }
 
     private String buildDetailQuestion(String query, boolean chinese) {
@@ -159,6 +247,21 @@ class SimilarQueryGenerator {
         return String.format("Which entities rank highest or lowest for %s", quote(query, false));
     }
 
+    private boolean shouldAddOverviewQuestion(String query) {
+        Category category = classify(query);
+        return category == Category.BREAKDOWN || category == Category.DETAIL
+                || !extractDimensions(query).isEmpty();
+    }
+
+    private String extractOverviewSubject(String query) {
+        String cleanedQuery = stripTrailingPunctuation(query);
+        Matcher chineseMatcher = CHINESE_BREAKDOWN_PREFIX_PATTERN.matcher(cleanedQuery);
+        if (chineseMatcher.matches() && StringUtils.isNotBlank(chineseMatcher.group(2))) {
+            return chineseMatcher.group(2);
+        }
+        return cleanedQuery;
+    }
+
     private String quote(String query, boolean chinese) {
         return chinese ? "“" + query + "”" : "\"" + query + "\"";
     }
@@ -180,6 +283,10 @@ class SimilarQueryGenerator {
             return Category.OTHER;
         }
         String normalized = stripTrailingPunctuation(text).toLowerCase(Locale.ROOT);
+        if (normalized.contains("整体") || normalized.contains("总体")
+                || normalized.contains("总览") || normalized.contains("overall")) {
+            return Category.OVERVIEW;
+        }
         if (normalized.contains("明细") || normalized.contains("详情") || normalized.contains("下钻")
                 || normalized.contains("drill") || normalized.contains("detail")) {
             return Category.DETAIL;
@@ -224,20 +331,26 @@ class SimilarQueryGenerator {
     }
 
     private enum Category {
-        BREAKDOWN, DETAIL, TREND, DRIVER, RANKING, OTHER
+        BREAKDOWN, OVERVIEW, DETAIL, TREND, DRIVER, RANKING, OTHER
     }
 
     private static class Candidate {
         private final String text;
+        private final Category category;
         private final int score;
 
-        private Candidate(String text, int score) {
+        private Candidate(String text, Category category, int score) {
             this.text = text;
+            this.category = category;
             this.score = score;
         }
 
         public String getText() {
             return text;
+        }
+
+        public Category getCategory() {
+            return category;
         }
 
         public int getScore() {

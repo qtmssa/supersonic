@@ -43,9 +43,9 @@ public class QueryRecommendProcessor implements ParseResultProcessor {
     private void doProcess(ParseContext parseContext) {
         Long queryId = parseContext.getResponse().getQueryId();
         try {
-            List<Text2SQLExemplar> recalledExemplars = recallSimilarExemplars(
+            List<Text2SQLExemplar> recalledExemplars = recallSimilarExemplarsSafely(
                     parseContext.getRequest().getQueryText(), parseContext.getAgent().getId());
-            List<String> historyQueries = getHistoryQueries(parseContext, queryId);
+            List<String> historyQueries = getHistoryQueriesSafely(parseContext, queryId);
             List<SimilarQueryRecallResp> solvedQueries =
                     similarQueryGenerator.generate(parseContext.getRequest().getQueryText(),
                             recalledExemplars, historyQueries, SIMILAR_QUERY_LIMIT);
@@ -63,7 +63,7 @@ public class QueryRecommendProcessor implements ParseResultProcessor {
                 SIMILAR_QUERY_LIMIT);
     }
 
-    private List<String> getHistoryQueries(ParseContext parseContext, Long currentQueryId) {
+    protected List<String> getHistoryQueries(ParseContext parseContext, Long currentQueryId) {
         ChatQueryRepository chatQueryRepository = ContextUtils.getBean(ChatQueryRepository.class);
         Integer chatId = parseContext.getRequest().getChatId();
         if (chatId == null) {
@@ -76,7 +76,28 @@ public class QueryRecommendProcessor implements ParseResultProcessor {
                 .collect(Collectors.toList());
     }
 
-    private void updateChatQuery(Long queryId, List<SimilarQueryRecallResp> similarQueries) {
+    private List<Text2SQLExemplar> recallSimilarExemplarsSafely(String queryText, Integer agentId) {
+        try {
+            return recallSimilarExemplars(queryText, agentId);
+        } catch (Exception e) {
+            log.warn("Failed to recall exemplars for similar query generation, agentId={}",
+                    agentId, e);
+            return List.of();
+        }
+    }
+
+    private List<String> getHistoryQueriesSafely(ParseContext parseContext, Long currentQueryId) {
+        try {
+            return getHistoryQueries(parseContext, currentQueryId);
+        } catch (Exception e) {
+            log.warn("Failed to load history queries for similar query generation, queryId={}",
+                    currentQueryId, e);
+            return List.of();
+        }
+    }
+
+    protected void updateChatQuery(Long queryId,
+            List<SimilarQueryRecallResp> similarQueries) {
         ChatQueryRepository chatQueryRepository = ContextUtils.getBean(ChatQueryRepository.class);
         UpdateWrapper<ChatQueryDO> updateWrapper = new UpdateWrapper<>();
         updateWrapper.lambda().eq(ChatQueryDO::getQuestionId, queryId)

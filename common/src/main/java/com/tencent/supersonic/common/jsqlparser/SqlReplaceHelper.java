@@ -264,16 +264,66 @@ public class SqlReplaceHelper {
     public static String replaceFunction(String sql, Map<String, String> functionMap,
             Map<String, UnaryOperator> functionCall) {
         Select selectStatement = SqlSelectHelper.getSelect(sql);
-        if (!(selectStatement instanceof PlainSelect)) {
+        if (selectStatement == null) {
             return sql;
         }
-        List<PlainSelect> plainSelectList = new ArrayList<>();
-        plainSelectList.add((PlainSelect) selectStatement);
+        List<PlainSelect> plainSelectList =
+                collectPlainSelectsForFunctionReplacement(selectStatement);
+        if (CollectionUtils.isEmpty(plainSelectList)) {
+            return sql;
+        }
         List<PlainSelect> plainSelects = SqlSelectHelper.getPlainSelects(plainSelectList);
         for (PlainSelect plainSelect : plainSelects) {
             replaceFunction(functionMap, functionCall, plainSelect);
         }
         return selectStatement.toString();
+    }
+
+    private static List<PlainSelect> collectPlainSelectsForFunctionReplacement(
+            Select selectStatement) {
+        List<PlainSelect> plainSelectList = new ArrayList<>();
+        collectWithItemPlainSelects(selectStatement.getWithItemsList(), plainSelectList);
+        if (selectStatement instanceof PlainSelect) {
+            PlainSelect plainSelect = (PlainSelect) selectStatement;
+            collectWithItemPlainSelects(plainSelect.getWithItemsList(), plainSelectList);
+            plainSelectList.add(plainSelect);
+        } else if (selectStatement instanceof SetOperationList) {
+            SetOperationList setOperationList = (SetOperationList) selectStatement;
+            if (!CollectionUtils.isEmpty(setOperationList.getSelects())) {
+                for (Select select : setOperationList.getSelects()) {
+                    if (select instanceof PlainSelect) {
+                        plainSelectList.add((PlainSelect) select);
+                    }
+                }
+            }
+            collectWithItemPlainSelects(setOperationList.getWithItemsList(), plainSelectList);
+        }
+        return plainSelectList;
+    }
+
+    private static void collectWithItemPlainSelects(List<WithItem> withItems,
+            List<PlainSelect> plainSelectList) {
+        if (CollectionUtils.isEmpty(withItems)) {
+            return;
+        }
+        for (WithItem withItem : withItems) {
+            Select select = withItem.getSelect();
+            if (select instanceof PlainSelect) {
+                plainSelectList.add((PlainSelect) select);
+            } else if (select instanceof ParenthesedSelect) {
+                plainSelectList.add(select.getPlainSelect());
+            } else if (select instanceof SetOperationList) {
+                SetOperationList setOperationList = (SetOperationList) select;
+                if (CollectionUtils.isEmpty(setOperationList.getSelects())) {
+                    continue;
+                }
+                for (Select subSelect : setOperationList.getSelects()) {
+                    if (subSelect instanceof PlainSelect) {
+                        plainSelectList.add((PlainSelect) subSelect);
+                    }
+                }
+            }
+        }
     }
 
     private static void replaceFunction(Map<String, String> functionMap,

@@ -7,6 +7,7 @@ import {
   ParseStateEnum,
   ParseTimeCostType,
   RangeValue,
+  SimilarQueriesSourceType,
   SimilarQuestionType,
 } from '../../common/type';
 import { createContext, useEffect, useRef, useState } from 'react';
@@ -33,6 +34,7 @@ import { AgentType } from '../../Chat/type';
 import dayjs, { Dayjs } from 'dayjs';
 import { exportCsvFile } from '../../utils/utils';
 import { useMethodRegister } from '../../hooks';
+import { mergeMsgDataSimilarQueries } from './similarQueryUtils';
 
 type Props = {
   msg: string;
@@ -109,6 +111,7 @@ const ChatItem: React.FC<Props> = ({
     {}
   );
   const [isParserError, setIsParseError] = useState<boolean>(false);
+  const dataRef = useRef<MsgDataType>();
   const resetState = () => {
     setParseLoading(false);
     setParseTimeCost(undefined);
@@ -120,6 +123,7 @@ const ChatItem: React.FC<Props> = ({
     setParseTip('');
     setExecuteMode(false);
     setDimensionFilters([]);
+    dataRef.current = undefined;
     setData(undefined);
     setExecuteErrorMsg('');
     setDateInfo({} as DateInfoType);
@@ -130,9 +134,24 @@ const ChatItem: React.FC<Props> = ({
 
   const prefixCls = `${PREFIX_CLS}-item`;
 
-  const updateData = (res: Result<MsgDataType>) => {
+  const syncData = (
+    nextData?: Partial<MsgDataType>,
+    nextSource: SimilarQueriesSourceType = 'bootstrap'
+  ) => {
+    const mergedData = mergeMsgDataSimilarQueries(dataRef.current, nextData, nextSource);
+    if (mergedData) {
+      dataRef.current = mergedData;
+      setData(mergedData);
+    }
+    return mergedData;
+  };
+
+  const updateData = (
+    res: Result<MsgDataType>,
+    similarQueriesSource: SimilarQueriesSourceType = 'bootstrap'
+  ) => {
     let tip: string = '';
-    let data: MsgDataType | undefined = undefined;
+    let nextData: MsgDataType | undefined = undefined;
     const { queryColumns, queryResults, queryState, queryMode, response, chatContext, errorMsg } =
       res.data || {};
     const exposeError = isDeveloper || isDebugMode;
@@ -155,19 +174,24 @@ const ChatItem: React.FC<Props> = ({
       queryMode === 'AGENT_SERVICE' ||
       queryMode === 'PLAIN_TEXT'
     ) {
-      data = res.data;
+      nextData = syncData(res.data, similarQueriesSource);
       tip = '';
     }
     if (chatContext) {
-      setDataCache({ ...dataCache, [chatContext!.id!]: { tip, data } });
+      setDataCache({ ...dataCache, [chatContext!.id!]: { tip, data: nextData } });
     }
-    if (data) {
-      setData(data);
+    if (nextData) {
       setExecuteTip('');
-      return true;
+      return {
+        valid: true,
+        data: nextData,
+      };
     }
     setExecuteTip(tip || SEARCH_EXCEPTION_TIP);
-    return false;
+    return {
+      valid: false,
+      data: nextData,
+    };
   };
 
   const onExecute = async (
@@ -184,10 +208,10 @@ const ChatItem: React.FC<Props> = ({
     }
     try {
       const res: any = await chatExecute(msg, conversationId!, parseInfoValue, agentId, true);
-      const valid = updateData(res);
+      const { valid, data: executeData } = updateData(res, 'bootstrap');
       onMsgDataLoaded?.(
         {
-          ...res.data,
+          ...(executeData || res.data),
           parseInfos,
           queryId: parseInfoValue.queryId,
         },
@@ -196,17 +220,29 @@ const ChatItem: React.FC<Props> = ({
       );
       const queryId = parseInfoValue.queryId; // 伪流式 大模型输出
       if (queryId != undefined && res.data.queryState != 'INVALID') {
-        const getSummary = async (data: any, queryId: number) => {
+        const getSummary = async (queryId: number) => {
           const res2: any = await getExecuteSummary(queryId);
+          const summaryData =
+            res2.data.queryMode == null
+              ? { ...(dataRef.current || executeData || res.data), textSummary: res2.data.textSummary }
+              : res2.data;
+          const mergedSummaryData = syncData(summaryData, 'authoritative');
+          if (mergedSummaryData) {
+            onMsgDataLoaded?.(
+              {
+                ...mergedSummaryData,
+                parseInfos,
+                queryId: parseInfoValue.queryId,
+              },
+              true,
+              true
+            );
+          }
           if (res2.data.queryMode == null) {
-            res2.data = { ...data, textSummary: res2.data.textSummary };
-            setData(res2.data);
-            setTimeout(() => getSummary(data, queryId), 500);
-          } else {
-            setData(res2.data);
+            setTimeout(() => getSummary(queryId), 500);
           }
         };
-        setTimeout(() => getSummary(res.data, queryId), 500);
+        setTimeout(() => getSummary(queryId), 500);
       }
     } catch (e) {
       const tip = SEARCH_EXCEPTION_TIP;
@@ -302,7 +338,10 @@ const ChatItem: React.FC<Props> = ({
       updateDimensionFitlers(parseInfoValue.dimensionFilters || []);
       setDateInfo(parseInfoValue.dateInfo);
       setExecuteMode(true);
-      updateData({ code: 200, data: msgData, msg: 'success' });
+      updateData(
+        { code: 200, data: msgData, msg: 'success' },
+        msgData?.similarQueriesSource || (msgData?.similarQueries?.length ? 'authoritative' : 'bootstrap')
+      );
     } else if (msg) {
       sendMsg();
     }
@@ -319,6 +358,7 @@ const ChatItem: React.FC<Props> = ({
     setEntitySwitchLoading(true);
     const res = await switchEntity(entityId, data?.chatContext?.modelId, conversationId || 0);
     setEntitySwitchLoading(false);
+    dataRef.current = res.data;
     setData(res.data);
     const { chatContext, entityInfo } = res.data || {};
     const chatContextValue = { ...(chatContext || {}), queryId: parseInfo?.queryId };
@@ -383,6 +423,7 @@ const ChatItem: React.FC<Props> = ({
         queryId,
       };
       onMsgDataLoaded?.(dataValue, true, true);
+      dataRef.current = dataValue;
       setData(dataValue);
       setParseInfo(contextValue);
       setDataCache({ ...dataCache, [id!]: { tip: '', data: dataValue } });
@@ -407,6 +448,7 @@ const ChatItem: React.FC<Props> = ({
     if (dataCache[parseInfoValue.id!]) {
       const { tip, data } = dataCache[parseInfoValue.id!];
       setExecuteTip(tip);
+      dataRef.current = data;
       setData(data);
       onMsgDataLoaded?.(
         {
@@ -586,6 +628,7 @@ const ChatItem: React.FC<Props> = ({
                   queryId={parseInfo?.queryId}
                   defaultExpanded
                   similarQueries={data?.similarQueries}
+                  similarQueriesSource={data?.similarQueriesSource}
                   onSelectQuestion={onSelectQuestion}
                 />
               )}

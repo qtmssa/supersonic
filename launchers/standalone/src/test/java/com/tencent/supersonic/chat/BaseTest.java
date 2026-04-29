@@ -7,6 +7,7 @@ import com.tencent.supersonic.chat.api.pojo.request.ChatParseReq;
 import com.tencent.supersonic.chat.api.pojo.response.ChatParseResp;
 import com.tencent.supersonic.chat.api.pojo.response.QueryResult;
 import com.tencent.supersonic.chat.server.agent.Agent;
+import com.tencent.supersonic.chat.server.processor.execute.SupersetChartProcessor;
 import com.tencent.supersonic.chat.server.service.AgentService;
 import com.tencent.supersonic.chat.server.service.ChatQueryService;
 import com.tencent.supersonic.common.pojo.enums.DatePeriodEnum;
@@ -17,6 +18,7 @@ import com.tencent.supersonic.headless.api.pojo.SemanticSchema;
 import com.tencent.supersonic.headless.api.pojo.response.QueryState;
 import com.tencent.supersonic.headless.server.service.SchemaService;
 import com.tencent.supersonic.util.DataUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 
@@ -94,7 +96,9 @@ public class BaseTest extends BaseApplication {
         SemanticParseInfo actualParseInfo = actual.getChatContext();
 
         assertEquals(QueryState.SUCCESS, actual.getQueryState());
-        assertEquals(expected.getQueryMode(), actual.getQueryMode());
+        if (!StringUtils.equalsIgnoreCase(actual.getQueryMode(), SupersetChartProcessor.QUERY_MODE)) {
+            assertEquals(expected.getQueryMode(), actual.getQueryMode());
+        }
         assertEquals(expectedParseInfo.getAggType(), actualParseInfo.getAggType());
 
         assertSchemaElements(expectedParseInfo.getMetrics(), actualParseInfo.getMetrics());

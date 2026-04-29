@@ -53,6 +53,7 @@ public class PostgresqlAdaptor extends BaseDbAdaptor {
         functionMap.put("MONTH".toLowerCase(), "TO_CHAR");
         functionMap.put("DAY".toLowerCase(), "TO_CHAR");
         functionMap.put("YEAR".toLowerCase(), "TO_CHAR");
+        functionMap.put("WEEK".toLowerCase(), "TO_CHAR");
         Map<String, UnaryOperator> functionCall = new HashMap<>();
         functionCall.put("MONTH".toLowerCase(), o -> {
             if (Objects.nonNull(o) && o instanceof ExpressionList) {
@@ -74,6 +75,14 @@ public class PostgresqlAdaptor extends BaseDbAdaptor {
             if (Objects.nonNull(o) && o instanceof ExpressionList) {
                 ExpressionList expressionList = (ExpressionList) o;
                 expressionList.add(new StringValue("YYYY"));
+                return expressionList;
+            }
+            return o;
+        });
+        functionCall.put("WEEK".toLowerCase(), o -> {
+            if (Objects.nonNull(o) && o instanceof ExpressionList) {
+                ExpressionList expressionList = (ExpressionList) o;
+                expressionList.add(new StringValue("IW"));
                 return expressionList;
             }
             return o;

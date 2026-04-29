@@ -7,6 +7,7 @@ import com.tencent.supersonic.chat.api.pojo.request.ChatParseReq;
 import com.tencent.supersonic.chat.api.pojo.request.ChatQueryDataReq;
 import com.tencent.supersonic.chat.api.pojo.response.ChatParseResp;
 import com.tencent.supersonic.chat.api.pojo.response.QueryResult;
+import com.tencent.supersonic.chat.api.pojo.response.SimilarQueryRecallResp;
 import com.tencent.supersonic.chat.server.agent.Agent;
 import com.tencent.supersonic.chat.server.executor.ChatQueryExecutor;
 import com.tencent.supersonic.chat.server.parser.ChatQueryParser;
@@ -18,6 +19,7 @@ import com.tencent.supersonic.chat.server.pojo.ParseContext;
 import com.tencent.supersonic.chat.server.processor.execute.DataInterpretProcessor;
 import com.tencent.supersonic.chat.server.processor.execute.ExecuteResultProcessor;
 import com.tencent.supersonic.chat.server.processor.parse.ParseResultProcessor;
+import com.tencent.supersonic.chat.server.processor.parse.SimilarQueryGenerator;
 import com.tencent.supersonic.chat.server.service.AgentService;
 import com.tencent.supersonic.chat.server.service.ChatManageService;
 import com.tencent.supersonic.chat.server.service.ChatQueryService;
@@ -100,6 +102,7 @@ public class ChatQueryServiceImpl implements ChatQueryService {
             ComponentFactory.getParseProcessors();
     private final List<ExecuteResultProcessor> executeResultProcessors =
             ComponentFactory.getExecuteProcessors();
+    private final SimilarQueryGenerator similarQueryGenerator = new SimilarQueryGenerator();
 
     @Override
     public List<SearchResult> search(ChatParseReq chatParseReq) {
@@ -171,6 +174,7 @@ public class ChatQueryServiceImpl implements ChatQueryService {
                     processor.process(executeContext);
                 }
             }
+            queryResult.setSimilarQueries(resolveExecutionSimilarQueries(chatExecuteReq));
             saveQueryResult(chatExecuteReq, queryResult);
         }
 
@@ -180,15 +184,15 @@ public class ChatQueryServiceImpl implements ChatQueryService {
     @Override
     public QueryResult getTextSummary(ChatExecuteReq chatExecuteReq) {
         String text = DataInterpretProcessor.getTextSummary(chatExecuteReq.getQueryId());
+        ChatQueryDO chatQueryDo = chatManageService.getChatQueryDO(chatExecuteReq.getQueryId());
         if (StringUtils.isNotBlank(text)) {
             QueryResult res = new QueryResult();
             res.setTextSummary(text);
             res.setQueryId(chatExecuteReq.getQueryId());
-            return res;
+            return applyPersistedSimilarQueries(chatQueryDo, res);
         } else {
-            ChatQueryDO chatQueryDo = chatManageService.getChatQueryDO(chatExecuteReq.getQueryId());
             QueryResult res = JSON.parseObject(chatQueryDo.getQueryResult(), QueryResult.class);
-            return res;
+            return applyPersistedSimilarQueries(chatQueryDo, res);
         }
     }
 
@@ -230,6 +234,53 @@ public class ChatQueryServiceImpl implements ChatQueryService {
         executeContext.setAgent(agent);
         executeContext.setParseInfo(parseInfo);
         return executeContext;
+    }
+
+    private List<SimilarQueryRecallResp> resolveExecutionSimilarQueries(ChatExecuteReq chatExecuteReq) {
+        List<SimilarQueryRecallResp> persistedSimilarQueries =
+                resolvePersistedSimilarQueries(chatManageService.getChatQueryDO(
+                        chatExecuteReq.getQueryId()));
+        if (!CollectionUtils.isEmpty(persistedSimilarQueries)) {
+            return persistedSimilarQueries;
+        }
+        List<String> historyQueries = loadHistoryQueries(chatExecuteReq.getChatId(),
+                chatExecuteReq.getQueryId());
+        return new ArrayList<>(similarQueryGenerator.generate(chatExecuteReq.getQueryText(),
+                List.of(), historyQueries, 5));
+    }
+
+    private List<String> loadHistoryQueries(Integer chatId, Long currentQueryId) {
+        if (chatId == null) {
+            return new ArrayList<>();
+        }
+        return chatQueryRepository.getChatQueries(chatId).stream()
+                .filter(Objects::nonNull)
+                .filter(query -> !Objects.equals(query.getQuestionId(), currentQueryId))
+                .map(com.tencent.supersonic.chat.api.pojo.response.QueryResp::getQueryText)
+                .filter(StringUtils::isNotBlank)
+                .collect(Collectors.toList());
+    }
+
+    private QueryResult applyPersistedSimilarQueries(ChatQueryDO chatQueryDo, QueryResult queryResult) {
+        QueryResult resolved = queryResult == null ? new QueryResult() : queryResult;
+        List<SimilarQueryRecallResp> persistedSimilarQueries = resolvePersistedSimilarQueries(
+                chatQueryDo);
+        if (!CollectionUtils.isEmpty(persistedSimilarQueries)) {
+            resolved.setSimilarQueries(persistedSimilarQueries);
+        } else if (CollectionUtils.isEmpty(resolved.getSimilarQueries())) {
+            resolved.setSimilarQueries(new ArrayList<>());
+        }
+        return resolved;
+    }
+
+    private List<SimilarQueryRecallResp> resolvePersistedSimilarQueries(ChatQueryDO chatQueryDo) {
+        if (chatQueryDo == null || StringUtils.isBlank(chatQueryDo.getSimilarQueries())) {
+            return new ArrayList<>();
+        }
+        List<SimilarQueryRecallResp> similarQueries =
+                JSON.parseArray(chatQueryDo.getSimilarQueries(), SimilarQueryRecallResp.class);
+        return CollectionUtils.isEmpty(similarQueries) ? new ArrayList<>()
+                : new ArrayList<>(similarQueries);
     }
 
     @Override

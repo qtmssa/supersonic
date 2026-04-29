@@ -136,4 +136,72 @@ describe('SimilarQuestionItem', () => {
     });
     expect(await screen.findByText('1. 按品牌看近30天销售额')).toBeInTheDocument();
   });
+
+  test('keeps bootstrap suggestions when a later empty prop update arrives', async () => {
+    const bootstrapSuggestions = [{ queryText: '按品牌看近30天销售额', queryId: 2, parseId: 0 }];
+    const { rerender } = render(
+      <SimilarQuestionItem
+        queryId={1}
+        similarQueries={bootstrapSuggestions}
+        onSelectQuestion={jest.fn()}
+      />
+    );
+
+    expect(screen.getByText('1. 按品牌看近30天销售额')).toBeInTheDocument();
+
+    rerender(
+      <SimilarQuestionItem queryId={1} similarQueries={[]} onSelectQuestion={jest.fn()} />
+    );
+
+    expect(screen.getByText('1. 按品牌看近30天销售额')).toBeInTheDocument();
+    expect(mockQuerySimilarQuestions).not.toHaveBeenCalled();
+  });
+
+  test('preserves collapse state and single-click behavior when richer suggestions replace bootstrap', async () => {
+    const onSelectQuestion = jest.fn();
+    const bootstrapSuggestions = [
+      { queryText: '按品牌看近30天销售额', queryId: 2, parseId: 0 },
+      { queryText: '按渠道看近30天销售额', queryId: 3, parseId: 0 },
+    ];
+    const richerSuggestions = [
+      { queryText: '按品牌看近30天销售额', queryId: 2, parseId: 0 },
+      { queryText: '按渠道看近30天销售额', queryId: 3, parseId: 0 },
+      { queryText: '按品类看近30天销售额', queryId: 4, parseId: 0 },
+      { queryText: '按品牌看近30天退货率', queryId: 5, parseId: 0 },
+    ];
+    const { rerender } = render(
+      <SimilarQuestionItem
+        queryId={1}
+        similarQueries={bootstrapSuggestions}
+        onSelectQuestion={onSelectQuestion}
+      />
+    );
+
+    expect(screen.getByText('1. 按品牌看近30天销售额')).toBeInTheDocument();
+    await act(async () => {
+      userEvent.click(screen.getByText('up'));
+    });
+    expect(screen.queryByText('1. 按品牌看近30天销售额')).not.toBeInTheDocument();
+
+    rerender(
+      <SimilarQuestionItem
+        queryId={1}
+        similarQueries={richerSuggestions}
+        onSelectQuestion={onSelectQuestion}
+      />
+    );
+
+    expect(screen.queryByText('1. 按品牌看近30天销售额')).not.toBeInTheDocument();
+
+    await act(async () => {
+      userEvent.click(screen.getByText('down'));
+    });
+    expect(await screen.findByText('4. 按品牌看近30天退货率')).toBeInTheDocument();
+
+    await act(async () => {
+      userEvent.click(screen.getByText('1. 按品牌看近30天销售额'));
+    });
+    expect(onSelectQuestion).toHaveBeenCalledTimes(1);
+    expect(onSelectQuestion).toHaveBeenCalledWith(richerSuggestions[0]);
+  });
 });

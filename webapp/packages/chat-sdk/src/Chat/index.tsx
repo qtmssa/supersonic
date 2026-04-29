@@ -205,7 +205,11 @@ const Chat: ForwardRefRenderFunction<any, Props> = (
       msg: item.queryText,
       parseInfos: item.parseInfos,
       parseTimeCost: item.parseTimeCost,
-      msgData: { ...(item.queryResult || {}), similarQueries: item.similarQueries },
+      msgData: {
+        ...(item.queryResult || {}),
+        similarQueries: item.similarQueries,
+        similarQueriesSource: item.similarQueries?.length ? 'authoritative' : undefined,
+      },
       score: item.score,
       agentId: item.agentId ?? currentAgent?.id,
     }));

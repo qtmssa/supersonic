@@ -206,7 +206,12 @@ public class DatabaseServiceImpl extends ServiceImpl<DatabaseDOMapper, DatabaseD
 
     @Override
     public SemanticQueryResp executeSql(String sql, DatabaseResp databaseResp) {
-        return queryWithColumns(sql, databaseResp);
+        if (databaseResp == null || StringUtils.isBlank(sql)) {
+            return queryWithColumns(sql, databaseResp);
+        }
+        DbAdaptor dbAdaptor = DbAdaptorFactory.getEngineAdaptor(databaseResp.getType());
+        String adaptedSql = dbAdaptor == null ? sql : dbAdaptor.rewriteSql(sql);
+        return queryWithColumns(adaptedSql, databaseResp);
     }
 
     @Override

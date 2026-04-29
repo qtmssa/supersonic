@@ -994,17 +994,32 @@ public class SupersetDatasetRegistryServiceImpl
         if (lookup == null || lookup.isEmpty()) {
             return null;
         }
-        SchemaElement matched = lookup.get(normalizeName(outputName));
+        SchemaElement matched = lookupSchemaElement(lookup, outputName);
         if (matched != null || CollectionUtils.isEmpty(sourceFields)) {
             return matched;
         }
         for (String sourceField : sourceFields) {
-            matched = lookup.get(normalizeName(sourceField));
+            matched = lookupSchemaElement(lookup, sourceField);
             if (matched != null) {
                 return matched;
             }
         }
         return null;
+    }
+
+    private SchemaElement lookupSchemaElement(Map<String, SchemaElement> lookup, String name) {
+        if (lookup == null || lookup.isEmpty() || StringUtils.isBlank(name)) {
+            return null;
+        }
+        SchemaElement matched = lookup.get(normalizeName(name));
+        if (matched != null) {
+            return matched;
+        }
+        String trimmedAlias = StringUtils.stripStart(StringUtils.trimToEmpty(name), "_");
+        if (StringUtils.equals(trimmedAlias, StringUtils.trimToEmpty(name))) {
+            return null;
+        }
+        return lookup.get(normalizeName(trimmedAlias));
     }
 
     private boolean isTimeField(SchemaElement dimensionElement, QueryColumn queryColumn) {

@@ -197,6 +197,9 @@ public class ChatManageServiceImpl implements ChatManageService {
         ChatQueryDO chatQueryDO = chatQueryRepository.getChatQueryDO(chatExecuteReq.getQueryId());
         chatQueryDO.setQuestionId(chatExecuteReq.getQueryId());
         chatQueryDO.setQueryResult(JsonUtil.toString(queryResult));
+        chatQueryDO.setSimilarQueries(JsonUtil.toString(CollectionUtils.isEmpty(
+                queryResult.getSimilarQueries()) ? Collections.emptyList()
+                        : queryResult.getSimilarQueries()));
         chatQueryDO.setQueryState(1);
         updateQuery(chatQueryDO);
         chatRepository.updateLastQuestion(chatExecuteReq.getChatId().longValue(),
