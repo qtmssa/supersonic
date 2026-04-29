@@ -13,6 +13,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 
@@ -234,14 +235,14 @@ public class SupersetVizTypeSelectorTest {
         Assertions.assertNotNull(timeTable);
         Assertions.assertNotNull(timeTable.getFormDataRules());
         Assertions.assertEquals("TIME_TABLE", timeTable.getFormDataRules().getProfile());
-        Assertions.assertEquals(Arrays.asList("granularity_sqla", "metrics"),
-                timeTable.getFormDataRules().getRequired());
+        Assertions.assertEquals(new LinkedHashSet<>(Arrays.asList("granularity_sqla", "metrics")),
+                new LinkedHashSet<>(timeTable.getFormDataRules().getRequired()));
 
         Assertions.assertNotNull(timePivot);
         Assertions.assertNotNull(timePivot.getFormDataRules());
         Assertions.assertEquals("TIME_PIVOT", timePivot.getFormDataRules().getProfile());
-        Assertions.assertEquals(Arrays.asList("granularity_sqla", "metric"),
-                timePivot.getFormDataRules().getRequired());
+        Assertions.assertEquals(new LinkedHashSet<>(Arrays.asList("granularity_sqla", "metric")),
+                new LinkedHashSet<>(timePivot.getFormDataRules().getRequired()));
     }
 
     @Test

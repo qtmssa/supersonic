@@ -2,12 +2,13 @@ import Text from '../components/Text';
 import { memo, useCallback, useEffect, useState } from 'react';
 import { isEqual } from 'lodash';
 import { AgentType, MessageItem, MessageTypeEnum } from '../type';
-import { isMobile, updateMessageContainerScroll } from '../../utils/utils';
+import { updateMessageContainerScroll } from '../../utils/utils';
 import styles from './style.module.less';
 import AgentTip from '../components/AgentTip';
 import classNames from 'classnames';
 import { MsgDataType } from '../../common/type';
 import ChatItem from '../../components/ChatItem';
+import { useChatMobileMode } from '../../runtime/chatRuntime';
 
 type Props = {
   id: string;
@@ -44,6 +45,7 @@ const MessageContainer: React.FC<Props> = ({
   onMsgDataLoaded,
   onSendMsg,
 }) => {
+  const isMobile = useChatMobileMode();
   const [triggerResize, setTriggerResize] = useState(false);
   const onResize = useCallback(() => {
     setTriggerResize(true);

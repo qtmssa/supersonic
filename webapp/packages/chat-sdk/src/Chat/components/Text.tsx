@@ -1,4 +1,3 @@
-import { isMobile } from '../../utils/utils';
 import { Avatar } from 'antd';
 import classNames from 'classnames';
 import LeftAvatar from './CopilotAvatar';
@@ -6,6 +5,7 @@ import Message from './Message';
 import styles from './style.module.less';
 import { userAvatarUrl } from '../../common/env';
 import IconFont from '../../components/IconFont';
+import { useChatMobileMode } from '../../runtime/chatRuntime';
 
 type Props = {
   position: 'left' | 'right';
@@ -15,6 +15,7 @@ type Props = {
 };
 
 const Text: React.FC<Props> = ({ position, data, quote, anonymousUser }) => {
+  const isMobile = useChatMobileMode();
   const textWrapperClass = classNames(styles.textWrapper, {
     [styles.rightTextWrapper]: position === 'right',
   });

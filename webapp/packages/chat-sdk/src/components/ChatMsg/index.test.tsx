@@ -13,8 +13,9 @@ jest.mock('../DrillDownDimensions', () => () => null);
 jest.mock('../../service', () => ({
   queryData: jest.fn(),
 }));
-jest.mock('../../utils/utils', () => ({
-  isMobile: false,
+jest.mock('../../runtime/chatRuntime', () => ({
+  useChatApiPrefix: () => '/api',
+  useChatMobileMode: () => false,
 }));
 
 describe('ChatMsg', () => {

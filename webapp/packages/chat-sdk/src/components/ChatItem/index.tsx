@@ -24,7 +24,6 @@ import IconFont from '../IconFont';
 import ExpandParseTip from './ExpandParseTip';
 import ParseTip from './ParseTip';
 import ExecuteItem from './ExecuteItem';
-import { isMobile } from '../../utils/utils';
 import classNames from 'classnames';
 import Tools from '../Tools';
 import SqlItem from './SqlItem';
@@ -33,6 +32,7 @@ import { AgentType } from '../../Chat/type';
 import dayjs, { Dayjs } from 'dayjs';
 import { exportCsvFile } from '../../utils/utils';
 import { useMethodRegister } from '../../hooks';
+import { useChatApiPrefix, useChatMobileMode } from '../../runtime/chatRuntime';
 
 type Props = {
   msg: string;
@@ -88,6 +88,8 @@ const ChatItem: React.FC<Props> = ({
   onUpdateMessageScroll,
   onSendMsg,
 }) => {
+  const isMobile = useChatMobileMode();
+  const apiPrefix = useChatApiPrefix();
   const [parseLoading, setParseLoading] = useState(false);
   const [parseTimeCost, setParseTimeCost] = useState<ParseTimeCostType>();
   const [parseInfo, setParseInfo] = useState<ChatContextType>();
@@ -183,7 +185,14 @@ const ChatItem: React.FC<Props> = ({
       setExecuteLoading(true);
     }
     try {
-      const res: any = await chatExecute(msg, conversationId!, parseInfoValue, agentId, true);
+      const res: any = await chatExecute(
+        msg,
+        conversationId!,
+        parseInfoValue,
+        agentId,
+        true,
+        apiPrefix
+      );
       const valid = updateData(res);
       onMsgDataLoaded?.(
         {
@@ -197,7 +206,7 @@ const ChatItem: React.FC<Props> = ({
       const queryId = parseInfoValue.queryId; // 伪流式 大模型输出
       if (queryId != undefined && res.data.queryState != 'INVALID') {
         const getSummary = async (data: any, queryId: number) => {
-          const res2: any = await getExecuteSummary(queryId);
+          const res2: any = await getExecuteSummary(queryId, apiPrefix);
           if (res2.data.queryMode == null) {
             res2.data = { ...data, textSummary: res2.data.textSummary };
             setData(res2.data);
@@ -236,13 +245,16 @@ const ChatItem: React.FC<Props> = ({
 
   const sendMsg = async () => {
     setParseLoading(true);
-    const parseData: any = await chatParse({
-      queryText: msg,
-      chatId: conversationId,
-      modelId,
-      agentId,
-      filters: filter,
-    });
+    const parseData: any = await chatParse(
+      {
+        queryText: msg,
+        chatId: conversationId,
+        modelId,
+        agentId,
+        filters: filter,
+      },
+      apiPrefix
+    );
     setParseLoading(false);
     const { code, data } = parseData || {};
     const { state, selectedParses, candidateParses, queryId, parseTimeCost, errorMsg } = data || {};
@@ -317,7 +329,12 @@ const ChatItem: React.FC<Props> = ({
 
   const onSwitchEntity = async (entityId: string) => {
     setEntitySwitchLoading(true);
-    const res = await switchEntity(entityId, data?.chatContext?.modelId, conversationId || 0);
+    const res = await switchEntity(
+      entityId,
+      data?.chatContext?.modelId,
+      conversationId || 0,
+      apiPrefix
+    );
     setEntitySwitchLoading(false);
     setData(res.data);
     const { chatContext, entityInfo } = res.data || {};
@@ -371,7 +388,7 @@ const ChatItem: React.FC<Props> = ({
       parseId,
       queryId,
     };
-    const res: any = await queryData(chatContextValue);
+    const res: any = await queryData(chatContextValue, apiPrefix);
     setEntitySwitchLoading(false);
     if (res.code === 200) {
       const resChatContext = res.data?.chatContext;
@@ -390,7 +407,7 @@ const ChatItem: React.FC<Props> = ({
   };
 
   const deleteQueryInfo = async (queryId: number) => {
-    const { code }: any = await deleteQuery(queryId);
+    const { code }: any = await deleteQuery(queryId, apiPrefix);
     if (code === 200) {
       resetState();
       initChatItem(msg, undefined);
@@ -427,16 +444,19 @@ const ChatItem: React.FC<Props> = ({
     setPreParseMode(false);
     const { id: parseId, queryId } = parseInfoValue;
     setParseLoading(true);
-    const { code, data }: any = await chatParse({
-      queryText: msg,
-      chatId: conversationId,
-      modelId,
-      agentId,
-      filters: filter,
-      parseId,
-      queryId,
-      parseInfo: parseInfoValue,
-    });
+    const { code, data }: any = await chatParse(
+      {
+        queryText: msg,
+        chatId: conversationId,
+        modelId,
+        agentId,
+        filters: filter,
+        parseId,
+        queryId,
+        parseInfo: parseInfoValue,
+      },
+      apiPrefix
+    );
     setParseLoading(false);
     if (code === 200) {
       setParseTimeCost(data.parseTimeCost);

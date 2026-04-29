@@ -3,6 +3,7 @@ import { PREFIX_CLS } from '../../common/constants';
 import { SimilarQuestionType } from '../../common/type';
 import { useEffect, useRef, useState } from 'react';
 import { querySimilarQuestions } from '../../service';
+import { useChatApiPrefix } from '../../runtime/chatRuntime';
 
 type Props = {
   queryId?: number;
@@ -20,6 +21,7 @@ const SimilarQuestions: React.FC<Props> = ({
   defaultExpanded,
   onSelectQuestion,
 }) => {
+  const apiPrefix = useChatApiPrefix();
   const [similarQuestions, setSimilarQuestions] = useState<SimilarQuestionType[]>(
     similarQueries || []
   );
@@ -52,7 +54,7 @@ const SimilarQuestions: React.FC<Props> = ({
   const initData = async (requestVersion = requestVersionRef.current) => {
     setLoading(true);
     try {
-      const res = await querySimilarQuestions(queryId!);
+      const res = await querySimilarQuestions(queryId!, apiPrefix);
       if (requestVersion !== requestVersionRef.current) {
         return;
       }
@@ -88,7 +90,7 @@ const SimilarQuestions: React.FC<Props> = ({
     retryCountRef.current = 0;
     clearRetryTimer();
     setSimilarQuestions(similarQueries || []);
-  }, [queryId, similarQueries]);
+  }, [apiPrefix, queryId, similarQueries]);
 
   useEffect(() => {
     if (expanded && similarQuestions?.length === 0 && queryId) {

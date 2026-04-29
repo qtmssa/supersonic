@@ -3,19 +3,21 @@ import LeftAvatar from '../CopilotAvatar';
 import Message from '../Message';
 import styles from './style.module.less';
 import { queryRecommendQuestions } from '../../service';
-import { isMobile } from '../../../utils/utils';
+import { useChatApiPrefix, useChatMobileMode } from '../../../runtime/chatRuntime';
 
 type Props = {
   onSelectQuestion: (value: string) => void;
 };
 
 const RecommendQuestions: React.FC<Props> = ({ onSelectQuestion }) => {
+  const isMobile = useChatMobileMode();
+  const apiPrefix = useChatApiPrefix();
   const [questions, setQuestions] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
 
   const initData = async () => {
     setLoading(true);
-    const res = await queryRecommendQuestions();
+    const res = await queryRecommendQuestions(apiPrefix);
     setLoading(false);
     setQuestions(
       res.data?.reduce((result: any[], item: any) => {

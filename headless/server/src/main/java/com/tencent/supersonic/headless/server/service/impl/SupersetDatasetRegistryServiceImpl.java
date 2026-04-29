@@ -37,6 +37,8 @@ import com.tencent.supersonic.headless.server.sync.superset.SupersetDatasetSyncS
 import com.tencent.supersonic.headless.server.sync.superset.SupersetDatasetType;
 import lombok.extern.slf4j.Slf4j;
 import net.sf.jsqlparser.expression.Expression;
+import net.sf.jsqlparser.expression.Function;
+import net.sf.jsqlparser.schema.Column;
 import net.sf.jsqlparser.schema.Table;
 import net.sf.jsqlparser.statement.select.PlainSelect;
 import net.sf.jsqlparser.statement.select.Select;
@@ -676,10 +678,12 @@ public class SupersetDatasetRegistryServiceImpl
 
     private List<DatasetOutputField> buildOutputFields(SemanticParseInfo parseInfo, String sql,
             List<QueryColumn> queryColumns) {
-        List<SelectItem<?>> selectItems = resolveTopLevelSelectItems(sql);
+        Select select = SqlSelectHelper.getSelect(sql);
+        List<SelectItem<?>> selectItems = resolveTopLevelSelectItems(select);
         if (CollectionUtils.isEmpty(selectItems)) {
             return Collections.emptyList();
         }
+        List<PlainSelect> plainSelects = SqlSelectHelper.getPlainSelect(select);
         Map<String, SchemaElement> metricLookup =
                 buildSchemaElementLookup(parseInfo == null ? null : parseInfo.getMetrics());
         Map<String, SchemaElement> dimensionLookup =
@@ -700,13 +704,20 @@ public class SupersetDatasetRegistryServiceImpl
                     positionalColumn == null ? queryColumnLookup.get(normalizeName(outputName))
                             : positionalColumn;
             Set<String> sourceFields = resolveSourceFields(selectItem.getExpression());
+            ResolvedFieldMetadata derivedMetadata =
+                    resolveDerivedFieldMetadata(outputName, plainSelects);
             SchemaElement metricElement =
                     resolveMatchedElement(metricLookup, outputName, sourceFields);
+            if (metricElement == null) {
+                metricElement = resolveMatchedElement(metricLookup, outputName,
+                        derivedMetadata.getSourceFields());
+            }
             SchemaElement dimensionElement =
                     resolveMatchedElement(dimensionLookup, outputName, sourceFields);
             boolean isTime = isTimeField(dimensionElement, queryColumn);
             boolean numeric = metricElement != null || isNumericQueryColumn(queryColumn)
-                    || isLikelyNumericExpression(selectItem.getExpression());
+                    || isLikelyNumericExpression(selectItem.getExpression())
+                    || derivedMetadata.isAggregateDerived() || derivedMetadata.isWindowDerived();
             boolean groupBy =
                     metricElement == null && (isTime || dimensionElement != null || !numeric);
 
@@ -722,6 +733,8 @@ public class SupersetDatasetRegistryServiceImpl
             outputField.setMetricCandidate(!groupBy && numeric);
             outputField.setMatchedMetric(metricElement != null);
             outputField.setAggregate(metricElement == null ? null : metricElement.getDefaultAgg());
+            outputField.setAggregateDerived(derivedMetadata.isAggregateDerived());
+            outputField.setWindowDerived(derivedMetadata.isWindowDerived());
             outputField.setType(isTime ? "DATE" : (numeric ? "NUMBER" : "STRING"));
             outputFields.add(outputField);
         }
@@ -860,6 +873,12 @@ public class SupersetDatasetRegistryServiceImpl
                 .collect(Collectors.toList());
         if (selectedMetrics.isEmpty()) {
             selectedMetrics = outputFields.stream()
+                    .filter(field -> field != null && field.isMetricCandidate()
+                            && field.isAggregateDerived() && !field.isWindowDerived())
+                    .collect(Collectors.toList());
+        }
+        if (selectedMetrics.isEmpty()) {
+            selectedMetrics = outputFields.stream()
                     .filter(field -> field != null && field.isMetricCandidate())
                     .collect(Collectors.toList());
         }
@@ -891,14 +910,14 @@ public class SupersetDatasetRegistryServiceImpl
         return element.getName();
     }
 
-    private List<SelectItem<?>> resolveTopLevelSelectItems(String sql) {
-        if (StringUtils.isBlank(sql)) {
+    private List<SelectItem<?>> resolveTopLevelSelectItems(Select select) {
+        if (select == null) {
             return Collections.emptyList();
         }
         try {
-            Select select = SqlSelectHelper.getSelect(sql);
-            if (select instanceof PlainSelect) {
-                return ((PlainSelect) select).getSelectItems();
+            PlainSelect plainSelect = select.getPlainSelect();
+            if (plainSelect != null) {
+                return plainSelect.getSelectItems();
             }
             if (select instanceof SetOperationList) {
                 List<Select> selects = ((SetOperationList) select).getSelects();
@@ -910,6 +929,90 @@ public class SupersetDatasetRegistryServiceImpl
             log.debug("resolve top level select items failed", ex);
         }
         return Collections.emptyList();
+    }
+
+    private ResolvedFieldMetadata resolveDerivedFieldMetadata(String outputName,
+            List<PlainSelect> plainSelects) {
+        return resolveDerivedFieldMetadata(outputName, plainSelects,
+                CollectionUtils.isEmpty(plainSelects) ? -1 : plainSelects.size() - 1,
+                new LinkedHashSet<>());
+    }
+
+    private ResolvedFieldMetadata resolveDerivedFieldMetadata(String outputName,
+            List<PlainSelect> plainSelects, int endIndex, Set<String> visitedNames) {
+        ResolvedFieldMetadata metadata = new ResolvedFieldMetadata();
+        if (StringUtils.isBlank(outputName) || CollectionUtils.isEmpty(plainSelects)
+                || endIndex < 0) {
+            return metadata;
+        }
+        String normalizedOutputName = normalizeName(outputName);
+        String visitKey = normalizedOutputName + "@" + endIndex;
+        if (!visitedNames.add(visitKey)) {
+            return metadata;
+        }
+        for (int i = endIndex; i >= 0; i--) {
+            PlainSelect plainSelect = plainSelects.get(i);
+            if (plainSelect == null || CollectionUtils.isEmpty(plainSelect.getSelectItems())) {
+                continue;
+            }
+            SelectItem<?> matchedSelectItem =
+                    findSelectItemByOutputName(plainSelect.getSelectItems(), normalizedOutputName);
+            if (matchedSelectItem == null || matchedSelectItem.getExpression() == null) {
+                continue;
+            }
+            return buildResolvedFieldMetadata(matchedSelectItem.getExpression(), plainSelects,
+                    i - 1, visitedNames);
+        }
+        return metadata;
+    }
+
+    private SelectItem<?> findSelectItemByOutputName(List<SelectItem<?>> selectItems,
+            String normalizedOutputName) {
+        if (CollectionUtils.isEmpty(selectItems) || StringUtils.isBlank(normalizedOutputName)) {
+            return null;
+        }
+        for (SelectItem<?> selectItem : selectItems) {
+            if (selectItem == null || selectItem.getExpression() == null) {
+                continue;
+            }
+            String alias = resolveSelectItemAlias(selectItem);
+            if (StringUtils.isNotBlank(alias)
+                    && normalizeName(alias).equals(normalizedOutputName)) {
+                return selectItem;
+            }
+            if (selectItem.getExpression() instanceof Column) {
+                String columnName = StringUtil
+                        .replaceBackticks(((Column) selectItem.getExpression()).getColumnName());
+                if (normalizeName(columnName).equals(normalizedOutputName)) {
+                    return selectItem;
+                }
+            }
+        }
+        return null;
+    }
+
+    private String resolveSelectItemAlias(SelectItem<?> selectItem) {
+        if (selectItem == null || selectItem.getAlias() == null) {
+            return null;
+        }
+        return StringUtil.replaceBackticks(selectItem.getAlias().getName());
+    }
+
+    private ResolvedFieldMetadata buildResolvedFieldMetadata(Expression expression,
+            List<PlainSelect> plainSelects, int upstreamEndIndex, Set<String> visitedNames) {
+        ResolvedFieldMetadata metadata = new ResolvedFieldMetadata();
+        if (expression == null) {
+            return metadata;
+        }
+        metadata.addSourceFields(resolveSourceFields(expression));
+        metadata.setAggregateDerived(isAggregateExpression(expression));
+        metadata.setWindowDerived(isWindowExpression(expression));
+        if (expression instanceof Column) {
+            String sourceName = StringUtil.replaceBackticks(((Column) expression).getColumnName());
+            metadata.merge(resolveDerivedFieldMetadata(sourceName, plainSelects, upstreamEndIndex,
+                    visitedNames));
+        }
+        return metadata;
     }
 
     private Map<String, SchemaElement> buildSchemaElementLookup(Set<SchemaElement> elements) {
@@ -1038,6 +1141,25 @@ public class SupersetDatasetRegistryServiceImpl
                 || text.contains("max(") || text.contains("min(") || text.contains("rank(")
                 || text.contains("row_number(") || text.contains("dense_rank(")
                 || text.contains("percent_rank(");
+    }
+
+    private boolean isAggregateExpression(Expression expression) {
+        if (!(expression instanceof Function)) {
+            return false;
+        }
+        Function function = (Function) expression;
+        String name = StringUtils.lowerCase(function.getName());
+        return "sum".equals(name) || "avg".equals(name) || "count".equals(name)
+                || "max".equals(name) || "min".equals(name);
+    }
+
+    private boolean isWindowExpression(Expression expression) {
+        if (expression == null) {
+            return false;
+        }
+        String text = StringUtils.lowerCase(StringUtil.replaceBackticks(expression.toString()));
+        return text.contains(" over ") || text.startsWith("row_number(") || text.startsWith("rank(")
+                || text.startsWith("dense_rank(") || text.startsWith("percent_rank(");
     }
 
     private String resolveVerboseName(QueryColumn queryColumn, SchemaElement metricElement,
@@ -1169,6 +1291,8 @@ public class SupersetDatasetRegistryServiceImpl
         private boolean filterable;
         private boolean metricCandidate;
         private boolean matchedMetric;
+        private boolean aggregateDerived;
+        private boolean windowDerived;
         private String aggregate;
 
         private String getOutputName() {
@@ -1243,12 +1367,69 @@ public class SupersetDatasetRegistryServiceImpl
             this.matchedMetric = matchedMetric;
         }
 
+        private boolean isAggregateDerived() {
+            return aggregateDerived;
+        }
+
+        private void setAggregateDerived(boolean aggregateDerived) {
+            this.aggregateDerived = aggregateDerived;
+        }
+
+        private boolean isWindowDerived() {
+            return windowDerived;
+        }
+
+        private void setWindowDerived(boolean windowDerived) {
+            this.windowDerived = windowDerived;
+        }
+
         private String getAggregate() {
             return aggregate;
         }
 
         private void setAggregate(String aggregate) {
             this.aggregate = aggregate;
+        }
+    }
+
+    private static class ResolvedFieldMetadata {
+        private final Set<String> sourceFields = new LinkedHashSet<>();
+        private boolean aggregateDerived;
+        private boolean windowDerived;
+
+        private Set<String> getSourceFields() {
+            return sourceFields;
+        }
+
+        private void addSourceFields(Set<String> fields) {
+            if (!CollectionUtils.isEmpty(fields)) {
+                sourceFields.addAll(fields);
+            }
+        }
+
+        private boolean isAggregateDerived() {
+            return aggregateDerived;
+        }
+
+        private void setAggregateDerived(boolean aggregateDerived) {
+            this.aggregateDerived = aggregateDerived;
+        }
+
+        private boolean isWindowDerived() {
+            return windowDerived;
+        }
+
+        private void setWindowDerived(boolean windowDerived) {
+            this.windowDerived = windowDerived;
+        }
+
+        private void merge(ResolvedFieldMetadata metadata) {
+            if (metadata == null) {
+                return;
+            }
+            addSourceFields(metadata.getSourceFields());
+            aggregateDerived = aggregateDerived || metadata.isAggregateDerived();
+            windowDerived = windowDerived || metadata.isWindowDerived();
         }
     }
 }

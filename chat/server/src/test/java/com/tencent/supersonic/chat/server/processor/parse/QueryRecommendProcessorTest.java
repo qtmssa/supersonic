@@ -23,10 +23,9 @@ class QueryRecommendProcessorTest {
     @Test
     void processShouldStillPersistGeneratedSuggestionsWhenRecallFails() throws Exception {
         ChatQueryRepository chatQueryRepository = Mockito.mock(ChatQueryRepository.class);
-        Mockito.when(chatQueryRepository.getChatQueries(7)).thenReturn(List.of(
-                buildQueryResp(1L, "按品牌看销售额"),
-                buildQueryResp(2L, "销售额趋势如何"),
-                buildQueryResp(99L, "近30天销售额怎么样")));
+        Mockito.when(chatQueryRepository.getChatQueries(7))
+                .thenReturn(List.of(buildQueryResp(1L, "按品牌看销售额"), buildQueryResp(2L, "销售额趋势如何"),
+                        buildQueryResp(99L, "近30天销售额怎么样")));
 
         CountDownLatch persistedLatch = new CountDownLatch(1);
         String[] persistedSimilarQueries = new String[1];
@@ -34,8 +33,7 @@ class QueryRecommendProcessorTest {
             UpdateWrapper<ChatQueryDO> updateWrapper = invocation.getArgument(1);
             persistedSimilarQueries[0] = updateWrapper.getParamNameValuePairs().values().stream()
                     .filter(String.class::isInstance).map(String.class::cast)
-                    .filter(value -> value.startsWith("["))
-                    .findFirst().orElse(null);
+                    .filter(value -> value.startsWith("[")).findFirst().orElse(null);
             persistedLatch.countDown();
             return null;
         }).when(chatQueryRepository).updateChatQuery(Mockito.any(ChatQueryDO.class),
@@ -43,14 +41,19 @@ class QueryRecommendProcessorTest {
 
         QueryRecommendProcessor processor = new QueryRecommendProcessor() {
             @Override
-            public List<Text2SQLExemplar> recallSimilarExemplars(String queryText, Integer agentId) {
+            public List<Text2SQLExemplar> recallSimilarExemplars(String queryText,
+                    Integer agentId) {
                 throw new IllegalStateException("embedding unavailable");
             }
+
+            @Override
+            protected void submitTask(Runnable task) {
+                task.run();
+            }
         };
-        ParseContext parseContext = new ParseContext(ChatParseReq.builder()
-                .queryText("近30天销售额怎么样")
-                .chatId(7)
-                .build(), new ChatParseResp(99L));
+        ParseContext parseContext =
+                new ParseContext(ChatParseReq.builder().queryText("近30天销售额怎么样").chatId(7).build(),
+                        new ChatParseResp(99L));
 
         try (MockedStatic<ContextUtils> mockedContext = Mockito.mockStatic(ContextUtils.class)) {
             mockedContext.when(() -> ContextUtils.getBean(ChatQueryRepository.class))

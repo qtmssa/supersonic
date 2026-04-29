@@ -2,6 +2,7 @@ import { Form, Input, Modal } from 'antd';
 import { useEffect, useRef, useState } from 'react';
 import { updateConversationName } from '../../service';
 import type { ConversationDetailType } from '../../type';
+import { useChatApiPrefix } from '../../../runtime/chatRuntime';
 
 const FormItem = Form.Item;
 
@@ -18,6 +19,7 @@ const layout = {
 };
 
 const ConversationModal: React.FC<Props> = ({ visible, editConversation, onClose, onFinish }) => {
+  const apiPrefix = useChatApiPrefix();
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
   const conversationNameInputRef = useRef<any>();
@@ -36,7 +38,7 @@ const ConversationModal: React.FC<Props> = ({ visible, editConversation, onClose
   const onConfirm = async () => {
     const values = await form.validateFields();
     setLoading(true);
-    await updateConversationName(values.conversationName, editConversation!.chatId);
+    await updateConversationName(values.conversationName, editConversation!.chatId, apiPrefix);
     setLoading(false);
     onFinish(values.conversationName);
   };

@@ -22,6 +22,7 @@
   --processing-color: #ff2442;
   --error-color: #ff4d4f;
   --highlight-color: #ff4d4f;
+  --ss-app-header-height: 56px;
   --font-family: -apple-system,BlinkMacSystemFont,"Segoe UI",Microsoft YaHei,"Helvetica Neue",Arial,"Noto Sans",sans-serif,"Apple Color Emoji","Segoe UI Emoji","Segoe UI Symbol","Noto Color Emoji";
   --tencent-font-family: 'tencentFont',-apple-system,BlinkMacSystemFont,"Segoe UI",Microsoft YaHei,"Helvetica Neue",Arial,"Noto Sans",sans-serif,"Apple Color Emoji","Segoe UI Emoji","Segoe UI Symbol","Noto Color Emoji";
 }
@@ -46,30 +47,44 @@ body,
 }
 
 html.ss-chat-page,
-body.ss-chat-page {
+body.ss-chat-page,
+body.ss-chat-page #root,
+body.ss-chat-page #root > div,
+body.ss-chat-page .ant-pro-layout,
+body.ss-chat-page .ant-pro-layout-container,
+body.ss-chat-page .ant-pro-layout-content {
   height: 100%;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+html.ss-chat-page,
+body.ss-chat-page {
   overflow: hidden;
 }
 
-body.ss-chat-page {
-  #root,
-  #root > div,
-  .ant-pro-layout,
-  .ant-pro-layout-container,
-  .ant-pro-layout-content {
-    height: 100%;
-    min-height: 0;
-    overflow: hidden;
-  }
+body.ss-chat-page #root,
+body.ss-chat-page #root > div,
+body.ss-chat-page .ant-pro-layout,
+body.ss-chat-page .ant-pro-layout-container,
+body.ss-chat-page .ant-pro-layout-content {
+  min-height: 0;
+  overflow: hidden;
+}
 
-  .ant-layout {
-    min-height: 0;
-  }
+body.ss-chat-page .ant-layout {
+  height: 100%;
+  min-height: 0;
 }
 
 .ss-chat-page-root {
   display: flex;
   flex: 1;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
   min-height: 0;
   height: 100%;
   overflow: hidden;

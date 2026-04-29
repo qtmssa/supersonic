@@ -42,3 +42,23 @@ export { searchRecommend } from './service';
 export { saveConversation, getAllConversations } from './Chat/service';
 
 export { setToken } from './utils/utils';
+
+export {
+  CHAT_EXTERNAL_ROUTE,
+  CHAT_MOBILE_ROUTE,
+  CHAT_STANDARD_ROUTE,
+  getChatRouteState,
+  isChatRoutePath,
+  normalizeChatPathname,
+} from './runtime/chatRoute';
+export {
+  ChatRuntimeProvider,
+  createChatRuntime,
+  resolveChatMobileMode,
+  useChatApiPrefix,
+  useChatMobileMode,
+  useChatRuntime,
+} from './runtime/chatRuntime';
+
+export type { ChatRouteKind, ChatRouteState } from './runtime/chatRoute';
+export type { ChatRuntime } from './runtime/chatRuntime';

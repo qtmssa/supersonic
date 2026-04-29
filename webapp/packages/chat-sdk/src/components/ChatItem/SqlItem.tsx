@@ -8,6 +8,7 @@ import { PREFIX_CLS } from '../../common/constants';
 import { CheckCircleFilled, DownloadOutlined, UpOutlined } from '@ant-design/icons';
 import { SqlInfoType } from '../../common/type';
 import { exportTextFile } from '../../utils/utils';
+import { isChatRoutePath } from '../../runtime/chatRoute';
 
 type Props = {
   agentId?: number;
@@ -52,6 +53,7 @@ const SqlItem: React.FC<Props> = ({
   }
 
   const { schema, terms, priorExts } = llmReq || {};
+  const isChatRoute = isChatRoutePath(window.location.pathname);
 
   const fewShots = (Object.values(llmResp?.sqlRespMap || {})[0] as any)?.fewShots || [];
 
@@ -261,7 +263,7 @@ ${executeErrorMsg}
         </div>
       </div>
       <div
-        className={`${prefixCls} ${!window.location.pathname.includes('/chat') &&
+        className={`${prefixCls} ${!isChatRoute &&
           integrateSystem &&
           integrateSystem !== 'wiki'
           ? `${prefixCls}-copilot`

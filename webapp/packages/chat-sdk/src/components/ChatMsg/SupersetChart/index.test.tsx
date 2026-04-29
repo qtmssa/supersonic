@@ -1,4 +1,5 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render as rtlRender, screen, waitFor } from '@testing-library/react';
+import { ChatRuntimeProvider, createChatRuntime } from '../../../runtime/chatRuntime';
 import SupersetChart from './index';
 
 jest.mock('@superset-ui/embedded-sdk', () => ({
@@ -66,6 +67,12 @@ const ensureServiceMocks = () => {
   pushSupersetChartToDashboard.mockResolvedValue({ code: 200, data: true });
 };
 
+const withRuntime = (ui: JSX.Element, pathname: string = '/webapp/chat/mobile') => (
+  <ChatRuntimeProvider value={createChatRuntime({ pathname })}>{ui}</ChatRuntimeProvider>
+);
+
+const render = (ui: JSX.Element, pathname?: string) => rtlRender(withRuntime(ui, pathname));
+
 describe('SupersetChart', () => {
   beforeEach(() => {
     document.documentElement.removeAttribute('data-theme');
@@ -110,6 +117,14 @@ describe('SupersetChart', () => {
     expect(args.iframeTitle).toBe('supersetIframe');
     expect(args.dashboardUiConfig.hideChartControls).toBe(false);
     await expect(args.fetchGuestToken()).resolves.toBe('token-default');
+    const { fetchSupersetGuestToken } = require('../../../service');
+    expect(fetchSupersetGuestToken).toHaveBeenCalledWith(
+      {
+        pluginId: 1,
+        embeddedId: 'uuid-456',
+      },
+      '/openapi'
+    );
   });
 
   test('uses first candidate embed as default view and renders switcher', async () => {
@@ -442,17 +457,130 @@ describe('SupersetChart', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: '推送到看板' }));
     await waitFor(() => {
-      expect(fetchSupersetManualDashboards).toHaveBeenCalledWith(1);
+      expect(fetchSupersetManualDashboards).toHaveBeenCalledWith(1, '/openapi');
     });
     await screen.findByText('经营分析总览');
     fireEvent.click(screen.getByRole('button', { name: '经营分析总览' }));
     fireEvent.click(screen.getByRole('button', { name: '推送到所选看板' }));
     await waitFor(() => {
-      expect(pushSupersetChartToDashboard).toHaveBeenCalledWith({
-        pluginId: 1,
-        dashboardId: 9001,
-        chartId: 22,
-      });
+      expect(pushSupersetChartToDashboard).toHaveBeenCalledWith(
+        {
+          pluginId: 1,
+          dashboardId: 9001,
+          chartId: 22,
+        },
+        '/openapi'
+      );
+    });
+  });
+
+  test('refreshes push callbacks after runtime api prefix changes', async () => {
+    const { embedDashboard } = require('@superset-ui/embedded-sdk');
+    const {
+      fetchSupersetManualDashboards,
+      pushSupersetChartToDashboard,
+    } = require('../../../service');
+    embedDashboard.mockClear();
+    const data = buildData({
+      webPage: { url: '', params: [] },
+      pluginId: 1,
+      dashboardId: 88,
+      dashboardTitle: '访问趋势分析',
+      embeddedId: 'embed-line',
+      supersetDomain: 'https://superset.example.com',
+      vizTypeCandidates: [
+        {
+          vizType: 'echarts_timeseries_line',
+          vizName: 'Line Chart',
+          embeddedId: 'embed-line',
+          supersetDomain: 'https://superset.example.com',
+          chartId: 11,
+        },
+      ],
+    });
+    const chart = <SupersetChart id={1} data={data} />;
+    const { rerender } = render(chart);
+    await waitFor(() => {
+      expect(embedDashboard).toHaveBeenCalledTimes(1);
+    });
+
+    rerender(withRuntime(chart, '/webapp/chat'));
+    fireEvent.click(screen.getByRole('button', { name: '推送到看板' }));
+    await waitFor(() => {
+      expect(fetchSupersetManualDashboards).toHaveBeenLastCalledWith(1, '/api');
+    });
+    await screen.findByText('经营分析总览');
+
+    rerender(withRuntime(chart, '/webapp/chat/mobile'));
+    fireEvent.click(screen.getByRole('button', { name: '经营分析总览' }));
+    fireEvent.click(screen.getByRole('button', { name: '推送到所选看板' }));
+    await waitFor(() => {
+      expect(pushSupersetChartToDashboard).toHaveBeenLastCalledWith(
+        {
+          pluginId: 1,
+          dashboardId: 9001,
+          chartId: 11,
+        },
+        '/openapi'
+      );
+    });
+  });
+
+  test('refreshes create-and-push callback after runtime api prefix changes', async () => {
+    const { embedDashboard } = require('@superset-ui/embedded-sdk');
+    const { fetchSupersetManualDashboards, createSupersetDashboard, pushSupersetChartToDashboard } =
+      require('../../../service');
+    embedDashboard.mockClear();
+    const data = buildData({
+      webPage: { url: '', params: [] },
+      pluginId: 1,
+      dashboardId: 88,
+      dashboardTitle: '访问趋势分析',
+      embeddedId: 'embed-line',
+      supersetDomain: 'https://superset.example.com',
+      vizTypeCandidates: [
+        {
+          vizType: 'echarts_timeseries_line',
+          vizName: 'Line Chart',
+          embeddedId: 'embed-line',
+          supersetDomain: 'https://superset.example.com',
+          chartId: 11,
+        },
+      ],
+    });
+    const chart = <SupersetChart id={1} data={data} />;
+    const { rerender } = render(chart);
+    await waitFor(() => {
+      expect(embedDashboard).toHaveBeenCalledTimes(1);
+    });
+
+    rerender(withRuntime(chart, '/webapp/chat'));
+    fireEvent.click(screen.getByRole('button', { name: '推送到看板' }));
+    await waitFor(() => {
+      expect(fetchSupersetManualDashboards).toHaveBeenLastCalledWith(1, '/api');
+    });
+    fireEvent.change(screen.getByPlaceholderText('输入新看板名称'), {
+      target: { value: '我的趋势看板' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '新建并推送' }));
+    await waitFor(() => {
+      expect(createSupersetDashboard).toHaveBeenLastCalledWith(
+        {
+          pluginId: 1,
+          title: '我的趋势看板',
+        },
+        '/api'
+      );
+    });
+    await waitFor(() => {
+      expect(pushSupersetChartToDashboard).toHaveBeenLastCalledWith(
+        {
+          pluginId: 1,
+          dashboardId: 9101,
+          chartId: 11,
+        },
+        '/api'
+      );
     });
   });
 
@@ -487,17 +615,23 @@ describe('SupersetChart', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: '新建并推送' }));
     await waitFor(() => {
-      expect(createSupersetDashboard).toHaveBeenCalledWith({
-        pluginId: 1,
-        title: '我的趋势看板',
-      });
+      expect(createSupersetDashboard).toHaveBeenCalledWith(
+        {
+          pluginId: 1,
+          title: '我的趋势看板',
+        },
+        '/openapi'
+      );
     });
     await waitFor(() => {
-      expect(pushSupersetChartToDashboard).toHaveBeenCalledWith({
-        pluginId: 1,
-        dashboardId: 9101,
-        chartId: 11,
-      });
+      expect(pushSupersetChartToDashboard).toHaveBeenCalledWith(
+        {
+          pluginId: 1,
+          dashboardId: 9101,
+          chartId: 11,
+        },
+        '/openapi'
+      );
     });
   });
 });

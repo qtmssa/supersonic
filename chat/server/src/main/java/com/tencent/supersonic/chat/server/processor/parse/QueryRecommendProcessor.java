@@ -14,6 +14,7 @@ import com.tencent.supersonic.common.util.ContextUtils;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 
+import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
@@ -36,16 +37,22 @@ public class QueryRecommendProcessor implements ParseResultProcessor {
 
     @Override
     public void process(ParseContext parseContext) {
-        CompletableFuture.runAsync(() -> doProcess(parseContext));
+        submitTask(() -> doProcess(parseContext));
+    }
+
+    protected void submitTask(Runnable task) {
+        CompletableFuture.runAsync(task);
     }
 
     @SneakyThrows
     private void doProcess(ParseContext parseContext) {
         Long queryId = parseContext.getResponse().getQueryId();
         try {
-            List<Text2SQLExemplar> recalledExemplars = recallSimilarExemplars(
-                    parseContext.getRequest().getQueryText(), parseContext.getAgent().getId());
             List<String> historyQueries = getHistoryQueries(parseContext, queryId);
+            Integer agentId =
+                    parseContext.getAgent() == null ? null : parseContext.getAgent().getId();
+            List<Text2SQLExemplar> recalledExemplars =
+                    safeRecallSimilarExemplars(parseContext.getRequest().getQueryText(), agentId);
             List<SimilarQueryRecallResp> solvedQueries =
                     similarQueryGenerator.generate(parseContext.getRequest().getQueryText(),
                             recalledExemplars, historyQueries, SIMILAR_QUERY_LIMIT);
@@ -61,6 +68,16 @@ public class QueryRecommendProcessor implements ParseResultProcessor {
         String memoryCollectionName = embeddingConfig.getMemoryCollectionName(agentId);
         return exemplarService.recallExemplars(memoryCollectionName, queryText,
                 SIMILAR_QUERY_LIMIT);
+    }
+
+    private List<Text2SQLExemplar> safeRecallSimilarExemplars(String queryText, Integer agentId) {
+        try {
+            return recallSimilarExemplars(queryText, agentId);
+        } catch (Exception ex) {
+            log.warn("Failed to recall similar exemplars, fallback to history only, agentId={}",
+                    agentId, ex);
+            return Collections.emptyList();
+        }
     }
 
     private List<String> getHistoryQueries(ParseContext parseContext, Long currentQueryId) {
@@ -79,8 +96,8 @@ public class QueryRecommendProcessor implements ParseResultProcessor {
     private void updateChatQuery(Long queryId, List<SimilarQueryRecallResp> similarQueries) {
         ChatQueryRepository chatQueryRepository = ContextUtils.getBean(ChatQueryRepository.class);
         UpdateWrapper<ChatQueryDO> updateWrapper = new UpdateWrapper<>();
-        updateWrapper.lambda().eq(ChatQueryDO::getQuestionId, queryId)
-                .set(ChatQueryDO::getSimilarQueries, JSONObject.toJSONString(similarQueries));
+        updateWrapper.eq("question_id", queryId).set("similar_queries",
+                JSONObject.toJSONString(similarQueries));
         chatQueryRepository.updateChatQuery(new ChatQueryDO(), updateWrapper);
     }
 }

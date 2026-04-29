@@ -1,9 +1,10 @@
-import { updateMessageContainerScroll, isMobile, uuid, setToken } from '../utils/utils';
+import { updateMessageContainerScroll, uuid, setToken } from '../utils/utils';
 import {
   ForwardRefRenderFunction,
   forwardRef,
   useEffect,
   useImperativeHandle,
+  useMemo,
   useRef,
   useState,
 } from 'react';
@@ -26,6 +27,7 @@ import { ConfigProvider, Drawer, Modal, Row, Col, Space, Switch, Tooltip } from 
 import locale from 'antd/locale/zh_CN';
 import dayjs from 'dayjs';
 import 'dayjs/locale/zh-cn';
+import { ChatRuntimeProvider, createChatRuntime } from '../runtime/chatRuntime';
 
 dayjs.locale('zh-cn');
 
@@ -38,6 +40,7 @@ type Props = {
   isDeveloper?: boolean;
   integrateSystem?: string;
   isCopilot?: boolean;
+  mobileMode?: boolean;
   onCurrentAgentChange?: (agent?: AgentType) => void;
   onReportMsgEvent?: (msg: string, valid: boolean) => void;
 };
@@ -52,11 +55,23 @@ const Chat: ForwardRefRenderFunction<any, Props> = (
     isDeveloper,
     integrateSystem,
     isCopilot,
+    mobileMode,
     onCurrentAgentChange,
     onReportMsgEvent,
   },
   ref
 ) => {
+  const pathname = typeof window === 'undefined' ? '' : window.location.pathname;
+  const chatRuntime = useMemo(
+    () =>
+      createChatRuntime({
+        explicitMobileMode: mobileMode,
+        pathname,
+      }),
+    [mobileMode, pathname]
+  );
+  const isMobile = chatRuntime.mobileMode;
+  const apiPrefix = chatRuntime.apiPrefix;
   const [messageList, setMessageList] = useState<MessageItem[]>([]);
   const [inputMsg, setInputMsg] = useState('');
   const [pageNo, setPageNo] = useState(1);
@@ -122,7 +137,7 @@ const Chat: ForwardRefRenderFunction<any, Props> = (
   };
 
   const initAgentList = async () => {
-    const res = await queryAgentList();
+    const res = await queryAgentList(apiPrefix);
     const agentListValue = (res.data || []).filter(
       item => item.status === 1 && (agentIds === undefined || agentIds.includes(item.id))
     );
@@ -212,7 +227,7 @@ const Chat: ForwardRefRenderFunction<any, Props> = (
   };
 
   const updateHistoryMsg = async (page: number) => {
-    const res = await getHistoryMsg(page, currentConversation!.chatId, 3);
+    const res = await getHistoryMsg(page, currentConversation!.chatId, 3, apiPrefix);
     const { hasNextPage, list } = res?.data || { hasNextPage: false, list: [] };
     const msgList = [...convertHistoryMsg(list), ...(page === 1 ? [] : messageList)];
     setMessageList(msgList);
@@ -386,7 +401,8 @@ const Chat: ForwardRefRenderFunction<any, Props> = (
   });
 
   return (
-    <ConfigProvider locale={locale}>
+    <ChatRuntimeProvider value={chatRuntime}>
+      <ConfigProvider locale={locale}>
       <div className={chatClass}>
         <div className={styles.chatSection}>
           {!isMobile && agentList.length > 1 && agentListVisible && (
@@ -522,7 +538,8 @@ const Chat: ForwardRefRenderFunction<any, Props> = (
           }}
         />
       </div>
-    </ConfigProvider>
+      </ConfigProvider>
+    </ChatRuntimeProvider>
   );
 };
 

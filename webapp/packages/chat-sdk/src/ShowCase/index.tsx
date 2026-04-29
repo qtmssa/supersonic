@@ -7,8 +7,8 @@ import ChatItem from '../components/ChatItem';
 import { HistoryMsgItemType } from '../common/type';
 import { Spin } from 'antd';
 import classNames from 'classnames';
-import { isMobile } from '../utils/utils';
 import { useThrottleFn } from 'ahooks';
+import { useChatApiPrefix, useChatMobileMode } from '../runtime/chatRuntime';
 
 type Props = {
   height?: number | string;
@@ -17,6 +17,8 @@ type Props = {
 };
 
 const ShowCase: React.FC<Props> = ({ height, agentId, onSendMsg }) => {
+  const isMobile = useChatMobileMode();
+  const apiPrefix = useChatApiPrefix();
   const [showCaseList, setShowCaseList] = useState<ShowCaseItemType[]>([]);
   const [loading, setLoading] = useState(false);
   const [pageNo, setPageNo] = useState(1);
@@ -27,7 +29,7 @@ const ShowCase: React.FC<Props> = ({ height, agentId, onSendMsg }) => {
     if (pageNoValue === 1) {
       setLoading(true);
     }
-    const res = await queryShowCase(agentId, pageNoValue, isMobile ? 10 : 20);
+    const res = await queryShowCase(agentId, pageNoValue, isMobile ? 10 : 20, apiPrefix);
     if (pageNoValue === 1) {
       setLoading(false);
     }
@@ -69,7 +71,7 @@ const ShowCase: React.FC<Props> = ({ height, agentId, onSendMsg }) => {
     return () => {
       el.removeEventListener('scroll', handleScroll);
     };
-  }, []);
+  }, [apiPrefix, isMobile]);
 
   useEffect(() => {
     if (agentId) {

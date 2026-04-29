@@ -1,7 +1,7 @@
 import { CLS_PREFIX } from '../../common/constants';
 import { FieldType } from '../../common/type';
 import classNames from 'classnames';
-import { isMobile } from '../../utils/utils';
+import { useChatMobileMode } from '../../runtime/chatRuntime';
 
 type Props = {
   metrics: FieldType[];
@@ -18,6 +18,7 @@ const MetricOptions: React.FC<Props> = ({
   isMetricCard,
   onSelectMetric,
 }) => {
+  const isMobile = useChatMobileMode();
   const DEFAULT_DIMENSION_COUNT = isMobile ? 2 : 5;
   const prefixCls = `${CLS_PREFIX}-metric-options`;
 

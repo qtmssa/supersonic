@@ -6,10 +6,10 @@ import Loading from './Loading';
 import FilterItem from './FilterItem';
 import MarkDown from '../ChatMsg/MarkDown';
 import classNames from 'classnames';
-import { isMobile } from '../../utils/utils';
 import dayjs, { Dayjs } from 'dayjs';
 import quarterOfYear from 'dayjs/plugin/quarterOfYear';
 import { prefixCls, getTipNode } from './ParseTipUtils';
+import { useChatMobileMode } from '../../runtime/chatRuntime';
 
 import 'dayjs/locale/zh-cn';
 
@@ -62,6 +62,7 @@ const ParseTip: React.FC<Props> = ({
   onRefresh,
   handlePresetClick,
 }) => {
+  const isMobile = useChatMobileMode();
   const ranges: Record<RangeKeys, RangeValue> = {
     近7日: [dayjs().subtract(7, 'day'), dayjs()],
     近14日: [dayjs().subtract(14, 'day'), dayjs()],

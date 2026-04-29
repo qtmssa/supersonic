@@ -11,8 +11,8 @@ import { PREFIX_CLS, MsgContentTypeEnum } from '../../common/constants';
 import Text from './Text';
 import DrillDownDimensions from '../DrillDownDimensions';
 import MetricOptions from '../MetricOptions';
-import { isMobile } from '../../utils/utils';
 import Pie from './Pie';
+import { useChatApiPrefix, useChatMobileMode } from '../../runtime/chatRuntime';
 
 type Props = {
   queryId?: number;
@@ -35,6 +35,8 @@ const ChatMsg: React.FC<Props> = ({
   isSimpleMode,
   onMsgContentTypeChange,
 }) => {
+  const isMobile = useChatMobileMode();
+  const apiPrefix = useChatApiPrefix();
   const { queryColumns, queryResults, chatContext, queryMode } = data || {};
   const { dimensionFilters, elementMatches } = chatContext || {};
 
@@ -274,12 +276,15 @@ const ChatMsg: React.FC<Props> = ({
 
   const onLoadData = async (value: any) => {
     setLoading(true);
-    const res: any = await queryData({
-      ...chatContext,
-      ...value,
-      queryId,
-      parseId: chatContext.id,
-    });
+    const res: any = await queryData(
+      {
+        ...chatContext,
+        ...value,
+        queryId,
+        parseId: chatContext.id,
+      },
+      apiPrefix
+    );
     setLoading(false);
     if (res.code === 200) {
       updateColumns(res.data?.queryColumns || []);

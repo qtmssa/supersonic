@@ -2,6 +2,7 @@ import moment, { Moment } from 'moment';
 import { NumericUnit } from '../common/constants';
 import { isString } from 'lodash';
 import { ColumnType } from '../common/type';
+import { resolveChatMobileMode } from '../runtime/chatRuntime';
 
 export function formatByDataFormatType(value: number | string, type: ColumnType['dataFormatType'], dataFormat: Partial<ColumnType['dataFormat']> = {}) {
   return `${formatByDecimalPlaces(dataFormat?.needMultiply100 ? +value * 100 : value, dataFormat?.decimalPlaces || 2)}${type === 'percent' ? '%' : ''}`;
@@ -191,11 +192,15 @@ export function getChartLightenColor(col) {
   return getLightenDarkenColor(col, 80);
 }
 
-export const isMobile = window.navigator.userAgent.match(/(iPhone|iPod|Android|ios)/i);
+const IOS_USER_AGENT_PATTERN = /(iPhone|iPod|ios)/i;
+const ANDROID_USER_AGENT_PATTERN = /(Android)/i;
 
-export const isIOS = window.navigator.userAgent.match(/(iPhone|iPod|ios)/i);
+const getUserAgent = () =>
+  typeof window === 'undefined' ? '' : window.navigator.userAgent || '';
 
-export const isAndroid = window.navigator.userAgent.match(/(Android)/i);
+export const isIOS = IOS_USER_AGENT_PATTERN.test(getUserAgent());
+
+export const isAndroid = ANDROID_USER_AGENT_PATTERN.test(getUserAgent());
 
 export function isProd() {
   return process.env.NODE_ENV === 'production';

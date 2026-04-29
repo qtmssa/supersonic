@@ -1,5 +1,5 @@
 import IconFont from '../../components/IconFont';
-import { getTextWidth, groupByColumn, isMobile } from '../../utils/utils';
+import { getTextWidth, groupByColumn } from '../../utils/utils';
 import { AutoComplete, Select, Tag } from 'antd';
 import classNames from 'classnames';
 import { debounce } from 'lodash';
@@ -10,6 +10,7 @@ import { AgentType, ModelType } from '../type';
 import { searchRecommend } from '../../service';
 import styles from './style.module.less';
 import { useComposing } from '../../hooks/useComposing';
+import { useChatApiPrefix, useChatMobileMode } from '../../runtime/chatRuntime';
 
 type Props = {
   inputMsg: string;
@@ -53,6 +54,8 @@ const ChatFooter: ForwardRefRenderFunction<any, Props> = (
   },
   ref
 ) => {
+  const isMobile = useChatMobileMode();
+  const apiPrefix = useChatApiPrefix();
   const [modelOptions, setModelOptions] = useState<(ModelType | AgentType)[]>([]);
   const [stepOptions, setStepOptions] = useState<Record<string, any[]>>({});
   const [open, setOpen] = useState(false);
@@ -130,7 +133,13 @@ const ChatFooter: ForwardRefRenderFunction<any, Props> = (
       fetchRef.current += 1;
       const fetchId = fetchRef.current;
       const { msgValue, dataSetId } = processMsg(msg);
-      const res = await searchRecommend(msgValue.trim(), chatId, dataSetId, currentAgent?.id);
+      const res = await searchRecommend(
+        msgValue.trim(),
+        chatId,
+        dataSetId,
+        currentAgent?.id,
+        apiPrefix
+      );
       if (fetchId !== fetchRef.current) {
         return;
       }
@@ -144,7 +153,7 @@ const ChatFooter: ForwardRefRenderFunction<any, Props> = (
       setOpen(recommends.length > 0);
     };
     return debounce(getAssociateWords, 200);
-  }, []);
+  }, [apiPrefix, isMobile]);
 
   const [debounceGetWords] = useState<any>(debounceGetWordsFunc);
 

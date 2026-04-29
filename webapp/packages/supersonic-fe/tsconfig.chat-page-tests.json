@@ -1,0 +1,22 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "commonjs",
+    "target": "es2020",
+    "outDir": ".tmp/chat-page-tests",
+    "rootDir": "..",
+    "sourceMap": false,
+    "noEmit": false,
+    "declaration": false
+  },
+  "include": [
+    "src/pages/ChatPage/layout.ts",
+    "src/pages/ChatPage/layout.test.ts",
+    "src/pages/ChatPage/routeState.ts",
+    "src/pages/ChatPage/routeState.test.ts",
+    "src/pages/ChatPage/routeConfig.test.ts",
+    "src/pages/ChatPage/routeParity.test.ts",
+    "src/pages/ChatPage/viewportContract.test.ts",
+    "src/pages/ChatPage/wiring.test.ts"
+  ]
+}

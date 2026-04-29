@@ -6,6 +6,7 @@ import { queryDimensionValues } from '../../service';
 import { debounce, isArray } from 'lodash';
 import SwicthEntity from './SwitchEntity';
 import dayjs from 'dayjs';
+import { useChatApiPrefix } from '../../runtime/chatRuntime';
 
 type Props = {
   modelId: number;
@@ -34,6 +35,7 @@ const FilterItem: React.FC<Props> = ({
   onFiltersChange,
   onSwitchEntity,
 }) => {
+  const apiPrefix = useChatApiPrefix();
   const [options, setOptions] = useState<{ label: string; value: string | null }[]>([]);
   const [loading, setLoading] = useState(false);
   const fetchRef = useRef(0);
@@ -46,7 +48,8 @@ const FilterItem: React.FC<Props> = ({
       filter.bizName,
       agentId!,
       filter.elementID,
-      ''
+      '',
+      apiPrefix
     );
     setOptions(
       data?.resultList?.map((item: any) => ({
@@ -72,7 +75,14 @@ const FilterItem: React.FC<Props> = ({
       const fetchId = fetchRef.current;
       setOptions([]);
       setLoading(true);
-      queryDimensionValues(modelId, filter.bizName, agentId!, filter.elementID, value).then(
+      queryDimensionValues(
+        modelId,
+        filter.bizName,
+        agentId!,
+        filter.elementID,
+        value,
+        apiPrefix
+      ).then(
         newOptions => {
           if (fetchId !== fetchRef.current) {
             return;
@@ -89,7 +99,7 @@ const FilterItem: React.FC<Props> = ({
     };
 
     return debounce(loadOptions, 500);
-  }, [queryDimensionValues]);
+  }, [agentId, apiPrefix, filter.bizName, filter.elementID, modelId]);
 
   const onOperatorChange = (value: string) => {
     const newFilters = filters.map((item, indexValue) => {

@@ -6,7 +6,7 @@ import { history, RunTimeLayoutConfig } from '@umijs/max';
 import defaultSettings from '../config/defaultSettings';
 import settings from '../config/themeSettings';
 import { queryCurrentUser } from './services/user';
-import { deleteUrlQuery, isMobile, getToken } from '@/utils/utils';
+import { isMobile, getToken } from '@/utils/utils';
 import { publicPath } from '../config/defaultSettings';
 import type { DefaultSetting } from '../config/defaultSettings';
 import { Copilot } from 'supersonic-chat-sdk';
@@ -14,8 +14,7 @@ import { configProviderTheme } from '../config/themeSettings';
 export { request } from './services/request';
 import { BASE_TITLE } from '@/common/constants';
 import { ROUTE_AUTH_CODES } from '../config/routes';
-import AppPage from './pages/index';
-import { getChatChildrenWrapperStyle, getChatContentStyle } from './pages/ChatPage/layout';
+import { getChatLayoutRuntime } from './pages/ChatPage/routeState';
 
 const replaceRoute = '/';
 
@@ -118,7 +117,13 @@ export function onRouteChange() {
 
 export const layout: RunTimeLayoutConfig = (params) => {
   const { initialState } = params as any;
-  const isChatRoute = history.location.pathname.includes('/chat');
+  const pathname = history.location.pathname;
+  const chatShellRuntime = getChatLayoutRuntime(
+    pathname,
+    initialState?.contentStyle || {},
+    Boolean(isMobile),
+    getToken() || ''
+  );
   return {
     onMenuHeaderClick: (e) => {
       e.preventDefault();
@@ -137,25 +142,16 @@ export const layout: RunTimeLayoutConfig = (params) => {
         </div>
       </Space>
     ),
-    contentStyle: isChatRoute
-      ? getChatContentStyle(initialState?.contentStyle || {})
-      : { ...(initialState?.contentStyle || {}) },
+    contentStyle: chatShellRuntime.contentStyle,
     rightContentRender: () => <RightContent />,
     disableContentMargin: true,
     // menuHeaderRender: undefined,
     childrenRender: (dom) => {
       return (
         <ConfigProvider theme={configProviderTheme}>
-          <div
-            style={
-              isChatRoute ? getChatChildrenWrapperStyle() : undefined
-            }
-          >
-            {/* <AppPage dom={dom} /> */}
+          <div style={chatShellRuntime.childrenWrapperStyle}>
             {dom}
-            {history.location.pathname !== '/chat' && !isMobile && (
-              <Copilot token={getToken() || ''} isDeveloper />
-            )}
+            {chatShellRuntime.copilotProps && <Copilot {...chatShellRuntime.copilotProps} />}
           </div>
         </ConfigProvider>
       );

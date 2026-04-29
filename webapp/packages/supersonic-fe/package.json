@@ -38,6 +38,7 @@
     "start:test": "cross-env REACT_APP_ENV=test MOCK=none max dev",
     "pretest": "node ./tests/beforeTest",
     "test": "max test",
+    "test:chat-page": "node -e \"require('fs').rmSync('.tmp/chat-page-tests', { recursive: true, force: true })\" && tsc -p tsconfig.chat-page-tests.json --pretty false && node .tmp/chat-page-tests/supersonic-fe/src/pages/ChatPage/layout.test.js && node .tmp/chat-page-tests/supersonic-fe/src/pages/ChatPage/routeState.test.js && node .tmp/chat-page-tests/supersonic-fe/src/pages/ChatPage/routeConfig.test.js && node .tmp/chat-page-tests/supersonic-fe/src/pages/ChatPage/routeParity.test.js && node .tmp/chat-page-tests/supersonic-fe/src/pages/ChatPage/viewportContract.test.js && node .tmp/chat-page-tests/supersonic-fe/src/pages/ChatPage/wiring.test.js",
     "test:all": "node ./tests/run-tests.js",
     "test:component": "max test ./src/components",
     "tsc": "tsc --noEmit"

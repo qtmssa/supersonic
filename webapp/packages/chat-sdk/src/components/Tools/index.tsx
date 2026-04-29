@@ -1,4 +1,3 @@
-import { isMobile } from '../../utils/utils';
 import {
   DislikeOutlined,
   LikeOutlined,
@@ -13,6 +12,7 @@ import classNames from 'classnames';
 import { updateQAFeedback } from '../../service';
 import { useMethodRegister } from '../../hooks';
 import { ChartItemContext } from '../ChatItem';
+import { useChatApiPrefix, useChatMobileMode } from '../../runtime/chatRuntime';
 
 type Props = {
   queryId: number;
@@ -33,18 +33,20 @@ const Tools: React.FC<Props> = ({
   onExportData,
   onReExecute,
 }) => {
+  const isMobile = useChatMobileMode();
+  const apiPrefix = useChatApiPrefix();
   const [score, setScore] = useState(scoreValue || 0);
   const [exportLoading, setExportLoading] = useState<boolean>(false);
   const prefixCls = `${CLS_PREFIX}-tools`;
 
   const like = () => {
     setScore(5);
-    updateQAFeedback(queryId, 5);
+    updateQAFeedback(queryId, 5, apiPrefix);
   };
 
   const dislike = () => {
     setScore(1);
-    updateQAFeedback(queryId, 1);
+    updateQAFeedback(queryId, 1, apiPrefix);
   };
 
   const likeClass = classNames(`${prefixCls}-like`, {

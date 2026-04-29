@@ -15,6 +15,7 @@ import {
   fetchSupersetManualDashboards,
   pushSupersetChartToDashboard,
 } from '../../../service';
+import { useChatApiPrefix } from '../../../runtime/chatRuntime';
 
 type Props = {
   id: string | number;
@@ -351,6 +352,7 @@ function resolveHostThemeMode(): ThemeMode {
 }
 
 const SupersetChart: React.FC<Props> = ({ id, data, triggerResize }) => {
+  const apiPrefix = useChatApiPrefix();
   const [height, setHeight] = useState(DEFAULT_HEIGHT);
   const [backgroundColor, setBackgroundColor] = useState<string>();
   const [activeViewKey, setActiveViewKey] = useState('');
@@ -633,7 +635,7 @@ const SupersetChart: React.FC<Props> = ({ id, data, triggerResize }) => {
     setDashboardLoading(true);
     try {
       const manageResp = unwrapApiEnvelope<SupersetDashboardManageResp>(
-        await fetchSupersetManualDashboards(response?.pluginId)
+        await fetchSupersetManualDashboards(response?.pluginId, apiPrefix)
       );
       const dashboards =
         manageResp && Array.isArray(manageResp.dashboards) ? manageResp.dashboards : [];
@@ -644,7 +646,7 @@ const SupersetChart: React.FC<Props> = ({ id, data, triggerResize }) => {
     } finally {
       setDashboardLoading(false);
     }
-  }, [canPushCurrentChart, response?.pluginId]);
+  }, [apiPrefix, canPushCurrentChart, response?.pluginId]);
 
   const handlePushExistingDashboard = useCallback(async () => {
     if (!canPushCurrentChart || !activeView?.chartId) {
@@ -662,7 +664,7 @@ const SupersetChart: React.FC<Props> = ({ id, data, triggerResize }) => {
           pluginId: response?.pluginId,
           dashboardId: selectedDashboardId,
           chartId: activeView.chartId,
-        })
+        }, apiPrefix)
       );
       if (pushed !== true) {
         throw new Error('推送到看板失败');
@@ -674,7 +676,7 @@ const SupersetChart: React.FC<Props> = ({ id, data, triggerResize }) => {
     } finally {
       setPushLoading(false);
     }
-  }, [activeView?.chartId, canPushCurrentChart, response?.pluginId, selectedDashboardId]);
+  }, [activeView?.chartId, apiPrefix, canPushCurrentChart, response?.pluginId, selectedDashboardId]);
 
   const handleCreateAndPushDashboard = useCallback(async () => {
     if (!canPushCurrentChart || !activeView?.chartId) {
@@ -692,7 +694,7 @@ const SupersetChart: React.FC<Props> = ({ id, data, triggerResize }) => {
         await createSupersetDashboard({
           pluginId: response?.pluginId,
           title,
-        })
+        }, apiPrefix)
       );
       if (!dashboard?.id) {
         throw new Error('新建看板失败');
@@ -702,7 +704,7 @@ const SupersetChart: React.FC<Props> = ({ id, data, triggerResize }) => {
           pluginId: response?.pluginId,
           dashboardId: dashboard.id,
           chartId: activeView.chartId,
-        })
+        }, apiPrefix)
       );
       if (pushed !== true) {
         throw new Error('推送到看板失败');
@@ -714,7 +716,7 @@ const SupersetChart: React.FC<Props> = ({ id, data, triggerResize }) => {
     } finally {
       setPushLoading(false);
     }
-  }, [activeView?.chartId, canPushCurrentChart, newDashboardTitle, response?.pluginId]);
+  }, [activeView?.chartId, apiPrefix, canPushCurrentChart, newDashboardTitle, response?.pluginId]);
 
   useEffect(() => {
     if (!embedInfo || !embedContainerRef.current) {
@@ -728,7 +730,7 @@ const SupersetChart: React.FC<Props> = ({ id, data, triggerResize }) => {
       const responseToken = await fetchSupersetGuestToken({
         pluginId: response?.pluginId,
         embeddedId: embedInfo.embedId,
-      });
+      }, apiPrefix);
       const token = resolveGuestToken(responseToken);
       if (!token) {
         const payload = (responseToken as any)?.data ?? responseToken;
@@ -799,7 +801,7 @@ const SupersetChart: React.FC<Props> = ({ id, data, triggerResize }) => {
       embedInstanceRef.current?.unmount();
       embedInstanceRef.current = null;
     };
-  }, [embedInfo, resolveBackgroundColor, response?.pluginId, syncHeight, syncTheme]);
+  }, [apiPrefix, embedInfo, resolveBackgroundColor, response?.pluginId, syncHeight, syncTheme]);
 
   useEffect(() => {
     if (!embedInfo || typeof window === 'undefined') {

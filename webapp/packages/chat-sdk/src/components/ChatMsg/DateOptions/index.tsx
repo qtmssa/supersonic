@@ -1,7 +1,7 @@
 import classNames from 'classnames';
 import { CLS_PREFIX, DATE_TYPES } from '../../../common/constants';
-import { isMobile } from '../../../utils/utils';
 import { ChatContextType } from '../../../common/type';
+import { useChatMobileMode } from '../../../runtime/chatRuntime';
 
 type Props = {
   chatContext: ChatContextType;
@@ -10,6 +10,7 @@ type Props = {
 };
 
 const DateOptions: React.FC<Props> = ({ chatContext, currentDateOption, onSelectDateOption }) => {
+  const isMobile = useChatMobileMode();
   const prefixCls = `${CLS_PREFIX}-date-options`;
 
   const dateOptions = DATE_TYPES[chatContext?.dateInfo?.period] || DATE_TYPES.DAY;

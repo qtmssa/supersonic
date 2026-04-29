@@ -165,14 +165,20 @@ public class AgentServiceQuery extends PluginSemanticQuery {
     }
 
     protected String resolveConversationId(Long chatId, Long agentId) {
-        if (chatSessionIdRepository == null || chatId == null) {
+        if (chatId == null) {
             return null;
+        }
+        if (chatSessionIdRepository == null) {
+            return buildFallbackConversationId(chatId, agentId);
         }
         ChatSessionIdDO session = chatSessionIdRepository.getByChatId(chatId);
         if (session == null) {
-            return null;
+            return buildFallbackConversationId(chatId, agentId);
         }
-        return session.getConversationId();
+        if (StringUtils.isNotBlank(session.getConversationId())) {
+            return session.getConversationId();
+        }
+        return buildFallbackConversationId(chatId, agentId);
     }
 
     protected void syncConversationId(Long chatId, Long agentId, String currentConversationId,
@@ -189,6 +195,13 @@ public class AgentServiceQuery extends PluginSemanticQuery {
             return;
         }
         chatSessionIdRepository.updateConversationId(chatId, responseConversationId);
+    }
+
+    private String buildFallbackConversationId(Long chatId, Long agentId) {
+        if (chatId == null || agentId == null) {
+            return null;
+        }
+        return String.valueOf(agentId) + chatId;
     }
 
     private String buildAgentServiceId(ChatPlugin plugin) {

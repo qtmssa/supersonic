@@ -26,8 +26,11 @@ jest.mock('../../service', () => ({
   getExecuteSummary: jest.fn(),
 }));
 jest.mock('../../utils/utils', () => ({
-  isMobile: false,
   exportCsvFile: jest.fn(),
+}));
+jest.mock('../../runtime/chatRuntime', () => ({
+  useChatApiPrefix: () => '/api',
+  useChatMobileMode: () => false,
 }));
 jest.mock('../../hooks', () => ({
   useMethodRegister: () => ({

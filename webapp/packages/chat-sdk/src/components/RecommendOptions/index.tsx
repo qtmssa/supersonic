@@ -1,4 +1,4 @@
-import { getFormattedValue, isMobile } from '../../utils/utils';
+import { getFormattedValue } from '../../utils/utils';
 import { Table, Avatar } from 'antd';
 import moment from 'moment';
 import { useEffect, useState } from 'react';
@@ -6,6 +6,7 @@ import { queryEntities } from '../../service';
 import { CLS_PREFIX } from '../../common/constants';
 import IconFont from '../IconFont';
 import classNames from 'classnames';
+import { useChatApiPrefix, useChatMobileMode } from '../../runtime/chatRuntime';
 
 type Props = {
   entityId: string | number;
@@ -15,6 +16,8 @@ type Props = {
 };
 
 const RecommendOptions: React.FC<Props> = ({ entityId, modelId, modelName, onSelect }) => {
+  const isMobile = useChatMobileMode();
+  const apiPrefix = useChatApiPrefix();
   const [data, setData] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -22,7 +25,7 @@ const RecommendOptions: React.FC<Props> = ({ entityId, modelId, modelName, onSel
 
   const initData = async () => {
     setLoading(true);
-    const res = await queryEntities(entityId, modelId);
+    const res = await queryEntities(entityId, modelId, apiPrefix);
     setLoading(false);
     setData(res.data);
   };

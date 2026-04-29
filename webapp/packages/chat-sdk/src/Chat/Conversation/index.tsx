@@ -15,6 +15,7 @@ import { AgentType, ConversationDetailType } from '../type';
 import { DEFAULT_CONVERSATION_NAME } from '../constants';
 import moment from 'moment';
 import { CloseOutlined, DeleteOutlined, SearchOutlined } from '@ant-design/icons';
+import { useChatApiPrefix } from '../../runtime/chatRuntime';
 
 type Props = {
   currentAgent?: AgentType;
@@ -32,6 +33,7 @@ const Conversation: ForwardRefRenderFunction<any, Props> = (
   { currentAgent, currentConversation, historyVisible, onSelectConversation, onCloseConversation },
   ref
 ) => {
+  const apiPrefix = useChatApiPrefix();
   const [conversations, setConversations] = useState<ConversationDetailType[]>([]);
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [editConversation, setEditConversation] = useState<ConversationDetailType>();
@@ -43,7 +45,7 @@ const Conversation: ForwardRefRenderFunction<any, Props> = (
   }));
 
   const updateData = async (agentId?: number) => {
-    const { data } = await getAllConversations(agentId || currentAgent!.id);
+    const { data } = await getAllConversations(agentId || currentAgent!.id, apiPrefix);
     const conversationList = data || [];
     setConversations(conversationList.slice(0, 200));
     return conversationList;
@@ -70,12 +72,12 @@ const Conversation: ForwardRefRenderFunction<any, Props> = (
 
   const addConversation = async (sendMsgParams?: any) => {
     const agentId = sendMsgParams?.agentId || currentAgent!.id;
-    await saveConversation(DEFAULT_CONVERSATION_NAME, agentId);
+    await saveConversation(DEFAULT_CONVERSATION_NAME, agentId, apiPrefix);
     return updateData(agentId);
   };
 
   const onDeleteConversation = async (id: number) => {
-    await deleteConversation(id);
+    await deleteConversation(id, apiPrefix);
     initData();
   };
 

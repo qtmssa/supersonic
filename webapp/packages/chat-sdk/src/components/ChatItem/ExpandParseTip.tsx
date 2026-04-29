@@ -5,11 +5,11 @@ import { CheckCircleFilled, CloseCircleFilled } from '@ant-design/icons';
 import Loading from './Loading';
 import FilterItem from './FilterItem';
 import classNames from 'classnames';
-import { isMobile } from '../../utils/utils';
 import dayjs, { Dayjs } from 'dayjs';
 import quarterOfYear from 'dayjs/plugin/quarterOfYear';
 import { prefixCls, getTipNode } from './ParseTipUtils';
 import MarkDown from '../ChatMsg/MarkDown';
+import { useChatMobileMode } from '../../runtime/chatRuntime';
 
 import 'dayjs/locale/zh-cn';
 
@@ -50,6 +50,7 @@ const ExpandParseTip: React.FC<Props> = ({
   onRefresh,
   handlePresetClick,
 }) => {
+  const isMobile = useChatMobileMode();
   const [currentParseInfo, setCurrentParseInfo] = useState<ChatContextType>();
 
   const ranges: Record<RangeKeys, RangeValue> = {

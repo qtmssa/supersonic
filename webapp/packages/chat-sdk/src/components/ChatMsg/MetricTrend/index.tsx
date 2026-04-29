@@ -1,6 +1,5 @@
 import { CLS_PREFIX } from '../../../common/constants';
 import { DrillDownDimensionType, FieldType, MsgDataType } from '../../../common/type';
-import { isMobile } from '../../../utils/utils';
 import MetricTrendChart from './MetricTrendChart';
 import { Spin, Select } from 'antd';
 import Table from '../Table';
@@ -8,6 +7,7 @@ import MetricInfo from './MetricInfo';
 import DateOptions from '../DateOptions';
 import MultiMetricsTrendChart from './MultiMetricsTrendChart';
 import { useState } from 'react';
+import { useChatMobileMode } from '../../../runtime/chatRuntime';
 
 const metricChartSelectOptions = [
   {
@@ -45,6 +45,7 @@ const MetricTrend: React.FC<Props> = ({
   onApplyAuth,
   onSelectDateOption,
 }) => {
+  const isMobile = useChatMobileMode();
   const { queryColumns, queryResults, aggregateInfo, entityInfo, chatContext } = data;
   const [chartType, setChartType] = useState('line');
 

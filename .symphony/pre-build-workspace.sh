@@ -26,8 +26,23 @@ seed_local_m2() {
   cp -a -n "$HOST_M2_DIR"/. "$LOCAL_M2_DIR"/
 }
 
+configure_maven_jvm_workaround() {
+  case " ${MAVEN_OPTS:-} " in
+    *" -XX:TieredStopAtLevel=1 "*) return ;;
+  esac
+
+  case "$(java -version 2>&1 | head -n 1)" in
+    *\"21.*)
+      # Work around an OpenJDK 21 C2 crash seen during dependency:go-offline.
+      export MAVEN_OPTS="${MAVEN_OPTS:+$MAVEN_OPTS }-XX:TieredStopAtLevel=1"
+      printf '[INFO] applying Maven JVM workaround: %s\n' '-XX:TieredStopAtLevel=1'
+      ;;
+  esac
+}
+
 prewarm_backend() {
   seed_local_m2
+  configure_maven_jvm_workaround
   printf '[INFO] prewarming Maven dependencies into %s\n' "$LOCAL_M2_DIR"
   mvn -pl common -DskipTests -Dspotless.skip=true dependency:go-offline
 }

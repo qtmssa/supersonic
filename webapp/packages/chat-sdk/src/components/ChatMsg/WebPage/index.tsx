@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { MsgDataType } from '../../../common/type';
-import { getToken, isMobile, isProd } from '../../../utils/utils';
+import { getToken, isProd } from '../../../utils/utils';
 import { webPageHost } from '../../../common/env';
+import { useChatMobileMode } from '../../../runtime/chatRuntime';
 
 type Props = {
   id: string | number;
@@ -11,6 +12,7 @@ type Props = {
 const DEFAULT_HEIGHT = 800;
 
 const WebPage: React.FC<Props> = ({ id, data }) => {
+  const isMobile = useChatMobileMode();
   const [pluginUrl, setPluginUrl] = useState('');
   const [height, setHeight] = useState(DEFAULT_HEIGHT);
 

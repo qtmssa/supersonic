@@ -2,7 +2,7 @@ import LeftAvatar from '../CopilotAvatar';
 import Message from '../Message';
 import styles from './style.module.less';
 import { AgentType } from '../../type';
-import { isMobile } from '../../../utils/utils';
+import { useChatMobileMode } from '../../../runtime/chatRuntime';
 
 type Props = {
   currentAgent?: AgentType;
@@ -10,6 +10,7 @@ type Props = {
 };
 
 const AgentTip: React.FC<Props> = ({ currentAgent, onSendMsg }) => {
+  const isMobile = useChatMobileMode();
   if (!currentAgent) {
     return null;
   }
