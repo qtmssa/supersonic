@@ -25,7 +25,7 @@ public class AgentServiceQueryTest {
         protected Object callAgentService(String url, Map<String, Object> payload) {
             Assertions.assertEquals("http://example.com", url);
             Assertions.assertEquals("agent-1", payload.get("agent_id"));
-            Assertions.assertEquals("12", payload.get("conversation_id"));
+            Assertions.assertNull(payload.get("conversation_id"));
             Assertions.assertEquals("你好", payload.get("message"));
             return response;
         }

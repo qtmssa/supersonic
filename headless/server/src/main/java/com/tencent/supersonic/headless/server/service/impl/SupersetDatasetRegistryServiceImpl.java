@@ -994,17 +994,46 @@ public class SupersetDatasetRegistryServiceImpl
         if (lookup == null || lookup.isEmpty()) {
             return null;
         }
-        SchemaElement matched = lookup.get(normalizeName(outputName));
+        SchemaElement matched = resolveLookupMatch(lookup, outputName);
         if (matched != null || CollectionUtils.isEmpty(sourceFields)) {
             return matched;
         }
         for (String sourceField : sourceFields) {
-            matched = lookup.get(normalizeName(sourceField));
+            matched = resolveLookupMatch(lookup, sourceField);
             if (matched != null) {
                 return matched;
             }
         }
         return null;
+    }
+
+    private SchemaElement resolveLookupMatch(Map<String, SchemaElement> lookup, String candidate) {
+        if (lookup == null || lookup.isEmpty() || StringUtils.isBlank(candidate)) {
+            return null;
+        }
+        SchemaElement matched = lookup.get(normalizeName(candidate));
+        if (matched != null) {
+            return matched;
+        }
+        String strippedCandidate = stripAliasDecoration(candidate);
+        if (StringUtils.isBlank(strippedCandidate)
+                || Objects.equals(strippedCandidate, StringUtils.trimToEmpty(candidate))) {
+            return null;
+        }
+        return lookup.get(normalizeName(strippedCandidate));
+    }
+
+    private String stripAliasDecoration(String name) {
+        String candidate = StringUtils.trimToEmpty(name);
+        int start = 0;
+        int end = candidate.length();
+        while (start < end && candidate.charAt(start) == '_') {
+            start++;
+        }
+        while (end > start && candidate.charAt(end - 1) == '_') {
+            end--;
+        }
+        return candidate.substring(start, end);
     }
 
     private boolean isTimeField(SchemaElement dimensionElement, QueryColumn queryColumn) {

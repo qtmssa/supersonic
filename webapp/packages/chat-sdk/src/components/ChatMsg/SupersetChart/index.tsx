@@ -3,6 +3,9 @@ import { Button, Input, Modal, message } from 'antd';
 import { embedDashboard } from '@superset-ui/embedded-sdk';
 import type { EmbeddedDashboard, ThemeMode } from '@superset-ui/embedded-sdk';
 import {
+  DrillDownDimensionType,
+  FieldType,
+  FilterItemType,
   MsgDataType,
   SupersetChartResponseType,
   SupersetDashboardItem,
@@ -14,7 +17,9 @@ import {
   fetchSupersetGuestToken,
   fetchSupersetManualDashboards,
   pushSupersetChartToDashboard,
+  queryData,
 } from '../../../service';
+import DrillControls from './DrillControls';
 
 type Props = {
   id: string | number;
@@ -195,6 +200,104 @@ function unwrapApiEnvelope<T>(payload: ApiEnvelope<T> | T | null | undefined): T
   return payload as T;
 }
 
+function getDimensionIdentity(
+  dimension?: Partial<FieldType & DrillDownDimensionType> | null
+) {
+  if (!dimension) {
+    return '';
+  }
+  const model = dimension.model ?? '';
+  const id = dimension.id ?? dimension.itemId ?? '';
+  const bizName = dimension.bizName ?? '';
+  const name = dimension.name ?? '';
+  return [model, id, bizName, name].join(':');
+}
+
+function getFilterIdentity(filter?: FilterItemType | null) {
+  if (!filter) {
+    return '';
+  }
+  return [filter.elementID ?? '', filter.bizName ?? '', filter.name ?? ''].join(':');
+}
+
+function mergeDrillDimensions(
+  baseDimensions: FieldType[],
+  drillPath: DrillDownDimensionType[]
+) {
+  const seen = new Set<string>();
+  return [...baseDimensions, ...drillPath].filter(dimension => {
+    const identity = getDimensionIdentity(dimension);
+    if (!identity || seen.has(identity)) {
+      return false;
+    }
+    seen.add(identity);
+    return true;
+  });
+}
+
+function hasUsableEmbedCandidate(candidate?: Partial<SupersetVizTypeCandidate> | null) {
+  return Boolean(candidate?.embeddedId && candidate?.supersetDomain);
+}
+
+function hasUsableSupersetResponse(response?: SupersetChartResponseType | null) {
+  if (!response || response.fallback) {
+    return false;
+  }
+  if (hasUsableEmbedCandidate(response)) {
+    return true;
+  }
+  return Array.isArray(response.vizTypeCandidates)
+    && response.vizTypeCandidates.some(candidate => hasUsableEmbedCandidate(candidate));
+}
+
+function resolvePreferredVizType(response?: SupersetChartResponseType | null) {
+  if (response?.vizType) {
+    return response.vizType;
+  }
+  return response?.vizTypeCandidates?.find(candidate => candidate?.vizType)?.vizType || '';
+}
+
+function getContextKey(payload?: MsgDataType | null) {
+  if (!payload) {
+    return '';
+  }
+  return `${payload.queryId || ''}:${payload.chatContext?.id || ''}`;
+}
+
+function resolveDrillFailureMessage(nextData?: MsgDataType | null) {
+  const response = nextData?.response as SupersetChartResponseType | undefined;
+  return response?.fallbackReason || nextData?.errorMsg || '当前钻取结果暂不支持继续渲染 Superset 图表';
+}
+
+function filterRecommendedDimensions(
+  dimensions: DrillDownDimensionType[],
+  selectedDimensions: FieldType[],
+  dimensionFilters: FilterItemType[],
+  drillPath: DrillDownDimensionType[]
+) {
+  const selectedIdentities = new Set(
+    [...selectedDimensions, ...drillPath]
+      .map(dimension => getDimensionIdentity(dimension))
+      .filter(Boolean)
+  );
+  const filterIdentities = new Set(
+    dimensionFilters.map(filter => getFilterIdentity(filter)).filter(Boolean)
+  );
+  const seen = new Set<string>();
+  return dimensions.filter(dimension => {
+    const dimensionIdentity = getDimensionIdentity(dimension);
+    const filterIdentity = [dimension.id ?? '', dimension.bizName ?? '', dimension.name ?? ''].join(':');
+    if (!dimensionIdentity || seen.has(dimensionIdentity)) {
+      return false;
+    }
+    if (selectedIdentities.has(dimensionIdentity) || filterIdentities.has(filterIdentity)) {
+      return false;
+    }
+    seen.add(dimensionIdentity);
+    return true;
+  });
+}
+
 function normalizeThemeModeHint(value?: string): ThemeMode | undefined {
   const normalized = value?.trim().toLowerCase();
   if (!normalized) {
@@ -351,9 +454,15 @@ function resolveHostThemeMode(): ThemeMode {
 }
 
 const SupersetChart: React.FC<Props> = ({ id, data, triggerResize }) => {
+  const [chartData, setChartData] = useState<MsgDataType>(data);
+  const [drillPath, setDrillPath] = useState<DrillDownDimensionType[]>([]);
+  const [drillLoading, setDrillLoading] = useState(false);
   const [height, setHeight] = useState(DEFAULT_HEIGHT);
   const [backgroundColor, setBackgroundColor] = useState<string>();
   const [activeViewKey, setActiveViewKey] = useState('');
+  const [preferredVizType, setPreferredVizType] = useState(
+    resolvePreferredVizType(data.response as SupersetChartResponseType)
+  );
   const [pushModalOpen, setPushModalOpen] = useState(false);
   const [pushLoading, setPushLoading] = useState(false);
   const [dashboardLoading, setDashboardLoading] = useState(false);
@@ -363,8 +472,36 @@ const SupersetChart: React.FC<Props> = ({ id, data, triggerResize }) => {
   const embedContainerRef = useRef<HTMLDivElement>(null);
   const embedInstanceRef = useRef<EmbedInstance | null>(null);
   const backgroundColorRef = useRef<string>();
-  const response = data.response as SupersetChartResponseType;
+  const baseDimensionsRef = useRef(data.chatContext?.dimensions || []);
+  const chartContextKeyRef = useRef(getContextKey(data));
+  const drillRequestSeqRef = useRef(0);
+  const hasLocalChartOverrideRef = useRef(false);
+  const response = chartData.response as SupersetChartResponseType;
   const webPage = response?.webPage;
+
+  useEffect(() => {
+    baseDimensionsRef.current = data.chatContext?.dimensions || [];
+    const incomingContextKey = getContextKey(data);
+    const currentContextKey = chartContextKeyRef.current;
+    const isSameContext = incomingContextKey === currentContextKey;
+    if (isSameContext && hasLocalChartOverrideRef.current) {
+      return;
+    }
+    setChartData(data);
+    if (!isSameContext) {
+      drillRequestSeqRef.current += 1;
+      hasLocalChartOverrideRef.current = false;
+      setDrillLoading(false);
+      setDrillPath([]);
+      setPreferredVizType(resolvePreferredVizType(data.response as SupersetChartResponseType));
+      return;
+    }
+    setPreferredVizType(prev => prev || resolvePreferredVizType(data.response as SupersetChartResponseType));
+  }, [data]);
+
+  useEffect(() => {
+    chartContextKeyRef.current = getContextKey(chartData);
+  }, [chartData]);
 
   const resolveGuestToken = (payload: any) => {
     const resolvedPayload = unwrapApiEnvelope<any>(payload) ?? payload;
@@ -473,12 +610,31 @@ const SupersetChart: React.FC<Props> = ({ id, data, triggerResize }) => {
   }, [response?.vizType, viewCandidates]);
 
   useEffect(() => {
-    setActiveViewKey(defaultViewKey);
-  }, [defaultViewKey]);
+    if (viewCandidates.length === 0) {
+      setActiveViewKey('');
+      return;
+    }
+    setActiveViewKey(currentKey => {
+      if (viewCandidates.some(candidate => candidate.key === currentKey)) {
+        return currentKey;
+      }
+      const preferredView = preferredVizType
+        ? viewCandidates.find(candidate => candidate.vizType === preferredVizType)
+        : undefined;
+      return preferredView?.key || defaultViewKey;
+    });
+  }, [defaultViewKey, preferredVizType, viewCandidates]);
 
   const activeView = useMemo(() => {
-    return viewCandidates.find(candidate => candidate.key === activeViewKey) || viewCandidates[0] || null;
-  }, [activeViewKey, viewCandidates]);
+    const matchedView = viewCandidates.find(candidate => candidate.key === activeViewKey);
+    if (matchedView) {
+      return matchedView;
+    }
+    const preferredView = preferredVizType
+      ? viewCandidates.find(candidate => candidate.vizType === preferredVizType)
+      : undefined;
+    return preferredView || viewCandidates[0] || null;
+  }, [activeViewKey, preferredVizType, viewCandidates]);
 
   const activeMinHeight = useMemo(() => {
     const heightValue = activeView?.dashboardHeight ?? defaultMinHeight;
@@ -506,8 +662,27 @@ const SupersetChart: React.FC<Props> = ({ id, data, triggerResize }) => {
   }, [activeView?.embeddedId, activeView?.supersetDomain, response?.embeddedId, response?.supersetDomain]);
 
   const canPushCurrentChart = Boolean(activeView?.chartId && response?.pluginId);
+  const recommendedDimensions = useMemo(
+    () =>
+      filterRecommendedDimensions(
+        chartData?.recommendedDimensions || [],
+        chartData?.chatContext?.dimensions || [],
+        chartData?.chatContext?.dimensionFilters || [],
+        drillPath
+      ),
+    [
+      chartData?.recommendedDimensions,
+      chartData?.chatContext?.dimensions,
+      chartData?.chatContext?.dimensionFilters,
+      drillPath,
+    ]
+  );
   const showSummary =
-    interactiveViewCandidates.length > 0 || rawCandidateLabels.length > 0 || canPushCurrentChart;
+    interactiveViewCandidates.length > 0 ||
+    rawCandidateLabels.length > 0 ||
+    canPushCurrentChart ||
+    recommendedDimensions.length > 0 ||
+    drillPath.length > 0;
 
   useEffect(() => {
     setHeight(activeMinHeight);
@@ -820,6 +995,73 @@ const SupersetChart: React.FC<Props> = ({ id, data, triggerResize }) => {
     }
   }, [syncHeight, triggerResize]);
 
+  const requestDrilledChart = useCallback(
+    async (nextDrillPath: DrillDownDimensionType[]) => {
+      const nextQueryId = chartData?.queryId ?? data?.queryId ?? Number(id);
+      const parseId = chartData?.chatContext?.id;
+      if (!nextQueryId || !parseId) {
+        message.error('缺少钻取所需的查询上下文');
+        return;
+      }
+      const requestId = ++drillRequestSeqRef.current;
+      const sourceContextKey = chartContextKeyRef.current;
+      const currentVizType = activeView?.vizType || preferredVizType;
+      setDrillLoading(true);
+      try {
+        const nextData = unwrapApiEnvelope<MsgDataType>(
+          await queryData({
+            ...chartData.chatContext,
+            queryId: nextQueryId,
+            parseId,
+            dimensions: mergeDrillDimensions(baseDimensionsRef.current, nextDrillPath),
+            metrics: chartData.chatContext?.metrics,
+            dateInfo: chartData.chatContext?.dateInfo,
+          })
+        );
+        if (!nextData) {
+          throw new Error('钻取结果为空');
+        }
+        if (
+          requestId !== drillRequestSeqRef.current ||
+          sourceContextKey !== chartContextKeyRef.current
+        ) {
+          return;
+        }
+        if (!hasUsableSupersetResponse(nextData.response as SupersetChartResponseType)) {
+          throw new Error(resolveDrillFailureMessage(nextData));
+        }
+        hasLocalChartOverrideRef.current = true;
+        setChartData(nextData);
+        setDrillPath(nextDrillPath);
+        setPreferredVizType(
+          currentVizType || resolvePreferredVizType(nextData.response as SupersetChartResponseType)
+        );
+      } catch (error: any) {
+        message.error(error?.message || '维度钻取失败');
+      } finally {
+        setDrillLoading(false);
+      }
+    },
+    [activeView?.vizType, chartData, data?.queryId, id, preferredVizType]
+  );
+
+  const handleDrillDown = useCallback(
+    async (dimension: DrillDownDimensionType) => {
+      if (drillLoading) {
+        return;
+      }
+      await requestDrilledChart([...drillPath, dimension]);
+    },
+    [drillLoading, drillPath, requestDrilledChart]
+  );
+
+  const handleDrillUp = useCallback(async () => {
+    if (drillLoading || drillPath.length === 0) {
+      return;
+    }
+    await requestDrilledChart(drillPath.slice(0, -1));
+  }, [drillLoading, drillPath, requestDrilledChart]);
+
   useEffect(() => {
     if (typeof window === 'undefined' || typeof MutationObserver === 'undefined') {
       return;
@@ -888,7 +1130,10 @@ const SupersetChart: React.FC<Props> = ({ id, data, triggerResize }) => {
                     key={view.key}
                     size="small"
                     type={activeView?.key === view.key ? 'primary' : 'default'}
-                    onClick={() => setActiveViewKey(view.key)}
+                    onClick={() => {
+                      setPreferredVizType(view.vizType || '');
+                      setActiveViewKey(view.key);
+                    }}
                   >
                     {view.label}
                   </Button>
@@ -924,6 +1169,13 @@ const SupersetChart: React.FC<Props> = ({ id, data, triggerResize }) => {
               </div>
             )}
           </div>
+          <DrillControls
+            recommendedDimensions={recommendedDimensions}
+            drillPath={drillPath}
+            loading={drillLoading}
+            onDrillDown={handleDrillDown}
+            onDrillUp={handleDrillUp}
+          />
         </div>
       )}
       {embedInfo ? (

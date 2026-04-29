@@ -43,8 +43,9 @@ public class QueryRecommendProcessor implements ParseResultProcessor {
     private void doProcess(ParseContext parseContext) {
         Long queryId = parseContext.getResponse().getQueryId();
         try {
-            List<Text2SQLExemplar> recalledExemplars = recallSimilarExemplars(
-                    parseContext.getRequest().getQueryText(), parseContext.getAgent().getId());
+            Integer agentId = parseContext.getAgent() == null ? null : parseContext.getAgent().getId();
+            List<Text2SQLExemplar> recalledExemplars = recallSimilarExemplarsSafely(
+                    parseContext.getRequest().getQueryText(), agentId, queryId);
             List<String> historyQueries = getHistoryQueries(parseContext, queryId);
             List<SimilarQueryRecallResp> solvedQueries =
                     similarQueryGenerator.generate(parseContext.getRequest().getQueryText(),
@@ -52,6 +53,17 @@ public class QueryRecommendProcessor implements ParseResultProcessor {
             updateChatQuery(queryId, solvedQueries);
         } catch (Exception e) {
             log.warn("Failed to generate similar queries, queryId={}", queryId, e);
+        }
+    }
+
+    private List<Text2SQLExemplar> recallSimilarExemplarsSafely(String queryText, Integer agentId,
+            Long queryId) {
+        try {
+            return recallSimilarExemplars(queryText, agentId);
+        } catch (Exception ex) {
+            log.warn("Failed to recall similar exemplars, fallback to history queries only, queryId={}",
+                    queryId, ex);
+            return List.of();
         }
     }
 

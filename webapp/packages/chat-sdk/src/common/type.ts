@@ -290,10 +290,28 @@ export type HistoryType = {
 };
 
 export type DrillDownDimensionType = {
+  dataSetId?: number;
+  dataSetName?: string;
   id: number;
   model: number;
   name: string;
   bizName: string;
+  useCnt?: number;
+  type?: string;
+  alias?: string[];
+  schemaValueMaps?: any[];
+  relatedSchemaElements?: any[];
+  defaultAgg?: string;
+  dataFormatType?: string;
+  order?: number;
+  isTag?: number;
+  description?: string;
+  extInfo?: Record<string, any>;
+  typeParams?: Record<string, any>;
+  itemId?: number;
+  status?: number;
+  value?: string;
+  showType?: string;
 };
 
 export type SendMsgParamsType = {

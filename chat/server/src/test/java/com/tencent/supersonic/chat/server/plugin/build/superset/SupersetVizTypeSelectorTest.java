@@ -234,13 +234,13 @@ public class SupersetVizTypeSelectorTest {
         Assertions.assertNotNull(timeTable);
         Assertions.assertNotNull(timeTable.getFormDataRules());
         Assertions.assertEquals("TIME_TABLE", timeTable.getFormDataRules().getProfile());
-        Assertions.assertEquals(Arrays.asList("granularity_sqla", "metrics"),
+        Assertions.assertEquals(Arrays.asList("metrics", "granularity_sqla"),
                 timeTable.getFormDataRules().getRequired());
 
         Assertions.assertNotNull(timePivot);
         Assertions.assertNotNull(timePivot.getFormDataRules());
         Assertions.assertEquals("TIME_PIVOT", timePivot.getFormDataRules().getProfile());
-        Assertions.assertEquals(Arrays.asList("granularity_sqla", "metric"),
+        Assertions.assertEquals(Arrays.asList("metric", "granularity_sqla"),
                 timePivot.getFormDataRules().getRequired());
     }
 

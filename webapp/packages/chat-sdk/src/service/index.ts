@@ -1,6 +1,8 @@
 import axios from './axiosInstance';
 import {
   ChatContextType,
+  DrillDownDimensionType,
+  FieldType,
   HistoryMsgItemType,
   HistoryType,
   MsgDataType,
@@ -148,7 +150,15 @@ export function switchEntity(entityId: string, modelId?: number, chatId?: number
   });
 }
 
-export function queryData(chatContext: Partial<ChatContextType>) {
+type QueryDataFieldType = FieldType | DrillDownDimensionType;
+
+export function queryData(
+  chatContext: Partial<Omit<ChatContextType, 'dimensions' | 'metrics'>> & {
+    parseId?: number;
+    dimensions?: QueryDataFieldType[];
+    metrics?: QueryDataFieldType[];
+  }
+) {
   return axios.post<MsgDataType>(`${prefix}/chat/query/queryData`, chatContext);
 }
 
